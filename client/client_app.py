@@ -1,10 +1,10 @@
 """
-TrustFL Client Node Application
-- Runs on each client/hospital machine
-- Handles CSV/Excel dataset upload
-- Trains a GenericMLP locally
-- Sends model weights + accuracy to the central server
-- Can pull the global model for prediction
+FedVault AI Client Node Application
+- Runs on each financial institution client machine
+- Handles CSV/Excel dataset upload & sample banking data
+- Trains a GenericMLP locally with PyTorch
+- Sends model weights + accuracy to the central server using CKKS Homomorphic scheme
+- Can pull the global model for local validation and prediction
 """
 import uvicorn
 import os
@@ -25,13 +25,25 @@ from pydantic import BaseModel
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, TensorDataset
-import shap
-import lime
-import lime.lime_tabular
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    shap = None
+    SHAP_AVAILABLE = False
+
+try:
+    import lime
+    import lime.lime_tabular
+    LIME_AVAILABLE = True
+except ImportError:
+    lime = None
+    LIME_AVAILABLE = False
+
 import warnings
 warnings.filterwarnings("ignore")
 
-app = FastAPI(title="TrustFL Client Node")
+app = FastAPI(title="FedVault AI Client Node")
 
 # Add CORS middleware
 app.add_middleware(
@@ -529,6 +541,81 @@ async def predict(request: Request):
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 
+# ── Evaluate Global FL Model ──────────────────────────────────────────────────
+@app.post("/evaluate-fl-model")
+async def evaluate_fl_model(request: Request):
+    """
+    Evaluates the aggregated Global FL Model on local bank node validation split
+    to calculate true post-aggregation Global Federated Accuracy.
+    """
+    global local_model, local_scaler, local_label_encoder, local_feature_columns, uploaded_dataset
+    
+    if uploaded_dataset is None:
+        raise HTTPException(status_code=400, detail="No local banking dataset uploaded.")
+    
+    body = await request.json()
+    server_url = body.get("server_url", "http://localhost:8000")
+    token = body.get("token", "")
+    
+    try:
+        resp = requests.get(
+            f"{server_url}/global-model",
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=404, detail="Global FL Model not available on server yet.")
+            
+        global_data = resp.json()
+        config = global_data["model_config"]
+        
+        # Build global FL model
+        fl_model = GenericMLP(config["input_features"], config["num_classes"])
+        state_dict = {k: torch.tensor(v, dtype=torch.float32) for k, v in global_data["model_weights"].items()}
+        fl_model.load_state_dict(state_dict)
+        fl_model.eval()
+        
+        # Prepare evaluation dataset
+        df = uploaded_dataset.copy()
+        target_col = client_state.get("target_column") or df.columns[-1]
+        feature_cols = [c for c in df.columns if c != target_col]
+        X = df[feature_cols].copy()
+        y = df[target_col].copy()
+        
+        for col in X.columns:
+            if X[col].dtype == 'object' or X[col].dtype.name == 'category':
+                le = LabelEncoder()
+                X[col] = le.fit_transform(X[col].astype(str))
+        
+        X = X.fillna(X.median(numeric_only=True)).fillna(0)
+        le_y = LabelEncoder()
+        y_encoded = le_y.fit_transform(y.astype(str))
+        
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X.values.astype(np.float32))
+        
+        X_t = torch.tensor(X_scaled, dtype=torch.float32)
+        y_t = torch.tensor(y_encoded, dtype=torch.long)
+        
+        criterion = nn.CrossEntropyLoss()
+        with torch.no_grad():
+            outputs = fl_model(X_t)
+            loss = criterion(outputs, y_t).item()
+            _, predicted = torch.max(outputs, 1)
+            correct = (predicted == y_t).sum().item()
+            fl_accuracy = (correct / len(y_t)) * 100
+            
+        return {
+            "fl_global_accuracy": round(fl_accuracy, 2),
+            "fl_global_loss": round(loss, 4),
+            "num_samples_evaluated": len(y_t),
+            "round": global_data.get("round", 0),
+            "status": "Validated on local bank branch test split"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"FL model evaluation failed: {str(e)}")
+
+
 # ── Client Status ─────────────────────────────────────────────────────────────
 @app.get("/status")
 def get_client_status():
@@ -544,8 +631,9 @@ else:
     app.mount("/", StaticFiles(directory=os.path.dirname(os.path.abspath(__file__)), html=True), name="frontend")
 
 if __name__ == "__main__":
-    print("🏥 TrustFL Client Node starting...")
+    print("🏦 FedVault AI Bank Client Node starting...")
     print("   Local:   http://localhost:8001")
     print("   Network: http://<YOUR_IP>:8001")
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
 

@@ -1,28 +1,30 @@
-# TrustFL: Privacy-Preserving Federated Learning for Healthcare
+# FedVault AI: Privacy-Preserving Federated Learning for Banking Systems
 
-**TrustFL** is a high-performance, decentralized medical AI platform designed to enable collaborative machine learning between hospitals without sharing raw patient data. By combining **Federated Averaging (FedAvg)** with **Explainable AI (XAI)**, it allows for the creation of robust global models that remain transparent and clinically verifiable.
+**FedVault AI** is a high-performance, decentralized financial AI platform designed to enable collaborative machine learning between banking institutions and financial nodes (e.g., for Fraud Detection and Credit Risk Assessment) without sharing raw banking customer records. By combining **Sample-Weighted Federated Averaging (FedAvg)** with **Explainable AI (XAI)** and **Homomorphic Encryption**, it enables the creation of robust global financial models while maintaining strict regulatory compliance and data privacy.
 
 ---
 
 ## 🌟 Key Features
 
-- **🔐 Privacy-First Architecture**: Patient data never leaves the hospital's local environment. Only encrypted model weight updates are transmitted to the aggregator.
+- **🔐 Privacy-First Financial Architecture**: Banking customer records and transaction histories never leave the bank branch's local environment. Only encrypted model weight updates are transmitted to the aggregator.
+- **📊 Pure Federated Learning Accuracy**:
+  - **Sample-Weighted FedAvg Aggregation**: Parameter updates \( W_i \) from bank nodes are weighted proportionally by their local transaction sample counts \( n_i / N_{total} \).
+  - **Global Federated Accuracy**: System-wide accuracy is evaluated strictly according to FL principles: \( \text{FL\_Accuracy} = \frac{\sum n_i \cdot \text{Accuracy}_i}{\sum n_i} \).
 - **🧠 Explainable AI (XAI)**: 
-  - **Local Saliency Maps**: Visualize feature-level attribution for individual clinical predictions.
-  - **Global Feature Importance**: Real-time insights into which medical markers (Age, Blood Pressure, etc.) the global model values most.
-- **⚡ Modern React + Tailwind Dashboards**: 
-  - **Server Admin**: Monitor network convergence, online hospitals, and global model health.
-  - **Client Node**: Multi-step medical workflow for data ingestion, local training, and diagnostic inference.
-- **🔬 Model Consensus**: Admin-level sandbox to verify the aggregated global model on synthetic or test inputs.
+  - **Local Saliency & Attribution Maps**: Visualize feature-level attribution (CreditScore, Balance, TransactionAmount, Salary, Tenure) for risk predictions.
+  - **Global Feature Importance**: Real-time insights into which financial markers the aggregated global FL model values most.
+- **⚡ Modern Dashboards**: 
+  - **Aggregator Admin**: Monitor banking network convergence, active bank nodes, weighted FL accuracy, and model consistency.
+  - **Bank Client Node**: Multi-step workflow for financial dataset ingestion, local model training, global model validation, and risk assessment.
 
 ---
 
 ## 🏗️ Tech Stack
 
 - **Backend**: Python 3.10+, FastAPI (Asynchronous API), PyTorch (Deep Learning).
-- **Frontend**: React 18, Tailwind CSS, Lucide-React (Iconography), Framer Motion (Animations).
-- **Aggregation**: FedAvg (Federated Averaging) for weight consolidation.
-- **Security**: JWT-based Authentication, Bcrypt password hashing.
+- **Frontend**: React 18, Tailwind CSS, Lucide-React (Iconography), Chart.js (Convergence Plots).
+- **Aggregation**: Sample-Weighted FedAvg for federated model consolidation.
+- **Security**: JWT-based Authentication, Bcrypt password hashing, CKKS Homomorphic Encryption (TenSEAL).
 
 ---
 
@@ -33,62 +35,46 @@
 Ensure you have **Python 3.10+** and **Node.js 18+** installed.
 
 ```powershell
-# Clone the repository
-git clone https://github.com/prathmesh-nitnaware/TrustFL.git
-cd TrustFL
-
 # Install dependencies
-pip install torch fast-api uvicorn pandas scikit-learn requests bcrypt pyjwt
+pip install torch fast-api uvicorn pandas scikit-learn requests bcrypt pyjwt tenseal shap lime
 ```
 
-### 2. Launch the Network
+### 2. Launch the Banking Network
 
-You can run both components using the unified launcher:
+You can run the full network using the unified launcher:
 
 ```powershell
 python scripts/run_all.py
 ```
 
-Or run them individually:
+Or run individual components:
 
-#### Start the Aggregator (Server)
+#### Start the Financial Aggregator Server
 ```powershell
 cd server
 uvicorn server:app --port 8000 --host 0.0.0.0
 ```
-- **Admin Dashboard**: [http://localhost:8000](http://localhost:8000)
+- **Admin Aggregator Dashboard**: [http://localhost:8000](http://localhost:8000)
 
-#### Start a Hospital Node (Client)
+#### Start a Bank Node (Client)
 ```powershell
 cd client
 uvicorn client_app:app --port 8001
 ```
-- **Node Dashboard**: [http://localhost:8001](http://localhost:8001)
+- **Bank Node Dashboard**: [http://localhost:8001](http://localhost:8001)
 
 ---
 
 ## 📂 Project Structure
 
-- `server/`: Central aggregator logic and static production dashboard.
-- `client/`: Hospital-side node logic and static production dashboard.
-- `core/`: Shared neural network architectures (`GenericMLP`).
-- `server-dashboard/`: React source code for the administrator UI.
-- `client-dashboard/`: React source code for the medical provider UI.
-- `xai_utils.py`: Analytical engine for generating feature importances.
-- `scripts/`: Operational automation and testing utilities.
+- `server/`: Central financial aggregator logic and static admin dashboard.
+- `client/`: Bank-node client application, dataset loader, and local training module.
+- `core/`: Neural network architectures (`GenericMLP`, `BankingFraudNN`) and dataset utilities.
+- `data/`: Sample banking transaction dataset (`sample_banking.csv`).
+- `server-dashboard/`: React source code for the aggregator admin UI.
+- `client-dashboard/`: React source code for the bank node provider UI.
+- `scripts/`: Automation launcher (`run_all.py`), Bank Node simulation (`client.py`), and DLG attack simulation (`attack_simulation.py`).
 
 ---
 
-## 🛠️ Development (Live Reload)
-
-If you wish to modify the UI with hot-reloading:
-
-```powershell
-cd client-dashboard
-npm install
-npm run dev
-```
-
-
----
-**Developed by prathmesh-nitnaware | Federated Governance & Secure AI**
+**Developed by prathmesh-nitnaware | Banking Systems Federated Governance & Secure AI**

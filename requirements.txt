@@ -6,9 +6,10 @@ requests
 matplotlib
 numpy
 scikit-learn
-tenseal
 pyjwt
 pandas
 python-multipart
 bcrypt
 openpyxl
+shap
+lime

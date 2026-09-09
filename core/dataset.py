@@ -1,7 +1,6 @@
 """
 TrustFL Dataset Module
-Handles user-uploaded CSV/Excel datasets for generic tabular training.
-Legacy Kaggle X-ray support kept for backward compatibility.
+Handles bank branch CSV/Excel datasets for Banking Systems tabular training (Fraud Detection & Credit Risk Scoring).
 """
 import os
 import io

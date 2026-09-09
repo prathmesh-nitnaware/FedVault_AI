@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrustFL — Federated Learning Client</title>
-    <meta name="description" content="TrustFL Client Node - Upload datasets, train models locally, and participate in federated learning.">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>FedVault AI — Federated Learning Bank Client</title>
+    <meta name="description" content="FedVault AI Client Node - Load local datasets, train PyTorch models, and participate in homomorphic federated learning.">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -17,8 +17,8 @@
             <div class="auth-header">
                 <div class="auth-logo">
                     <div class="logo-icon"><i class="fa-solid fa-shield-halved"></i></div>
-                    <h1>TrustFL</h1>
-                    <p class="auth-subtitle">Privacy-Preserving Federated Learning</p>
+                    <h1>FedVault AI</h1>
+                    <p class="auth-subtitle">Financial Privacy-Preserving Federated Intelligence</p>
                 </div>
             </div>
 
@@ -96,8 +96,8 @@
             <div class="header-left">
                 <div class="logo-mark"><i class="fa-solid fa-shield-halved"></i></div>
                 <div>
-                    <h1 class="header-title">TrustFL Client</h1>
-                    <p class="header-sub">Federated Learning Node</p>
+                    <h1 class="header-title">FedVault AI Bank Client</h1>
+                    <p class="header-sub">Financial Node Workspace</p>
                 </div>
             </div>
             <div class="header-right">
@@ -118,27 +118,27 @@
             <!-- ─── Step 1: Network Connection ─── -->
             <section class="card config-card">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-network-wired"></i> Step 1: Connect to Hospital Network</h2>
+                    <h2><i class="fa-solid fa-network-wired"></i> Step 1: Connect to Banking Network</h2>
                 </div>
                 <div class="input-group">
-                    <label>Network Address (Provided by admin)</label>
+                    <label>Network Address (Provided by central aggregator admin)</label>
                     <input type="text" id="serverUrl" value="http://localhost:8000" placeholder="e.g. http://192.168.1.100:8000">
-                    <p class="muted-text" style="font-size: 0.85rem; margin-top: 5px;">This connects your app securely to the central AI server.</p>
+                    <p class="muted-text" style="font-size: 0.85rem; margin-top: 5px;">Connects your bank node securely to the central FL server.</p>
                 </div>
             </section>
 
             <!-- ─── Step 2: Dataset Upload ─── -->
             <section class="card upload-card">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-file-medical"></i> Step 2: Securely Select Data</h2>
+                    <h2><i class="fa-solid fa-file-invoice-dollar"></i> Step 2: Securely Select Banking Data</h2>
                 </div>
                 <p class="muted-text" style="font-size: 0.85rem; margin-bottom: 10px;">
-                    <i class="fa-solid fa-lock" style="color:#10b981;"></i> Your files never leave this computer. Only mathematical updates are shared.
+                    <i class="fa-solid fa-lock" style="color:#10b981;"></i> Customer records never leave this bank node. Only encrypted parameter updates are shared.
                 </p>
                 
                 <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
                     <i class="fa-solid fa-cloud-arrow-up"></i>
-                    <p>Drag & drop your patient data (CSV or Excel) here</p>
+                    <p>Drag & drop your banking dataset (CSV or Excel) here</p>
                     <p class="upload-hint">or click here to browse files</p>
                     <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" hidden>
                 </div>
@@ -146,7 +146,7 @@
                 <div id="datasetInfo" class="dataset-info hidden">
                     <div class="info-row">
                         <span><i class="fa-solid fa-file"></i> <span id="fileName">-</span></span>
-                        <span><i class="fa-solid fa-hospital-user"></i> <span id="dataRows">0</span> patient records found</span>
+                        <span><i class="fa-solid fa-building-columns"></i> <span id="dataRows">0</span> financial records found</span>
                     </div>
                     <div class="data-preview" id="dataPreview"></div>
                 </div>
@@ -155,18 +155,18 @@
             <!-- ─── Step 3: Training Config ─── -->
             <section class="card training-card" id="trainingSection">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-brain"></i> Step 3: Train Artificial Intelligence</h2>
+                    <h2><i class="fa-solid fa-brain"></i> Step 3: Train Local Banking AI</h2>
                 </div>
                 
                 <div class="input-group">
-                    <label>Select What to Predict (e.g., Target Disease column)</label>
+                    <label>Select Target Column (e.g. IsFraud or RiskLevel)</label>
                     <select id="targetColumn">
-                        <option value="">-- Upload patient data first --</option>
+                        <option value="">-- Upload banking data first --</option>
                     </select>
                 </div>
                 
                 <div class="input-group">
-                    <label>Training Cycles (Higher = more learning time)</label>
+                    <label>Training Epochs</label>
                     <input type="number" id="epochs" value="10" min="1" max="100">
                 </div>
                 
@@ -178,21 +178,21 @@
                     <div class="progress-bar">
                         <div class="progress-fill" id="progressFill"></div>
                     </div>
-                    <p class="progress-text" id="progressText">Initializing AI...</p>
+                    <p class="progress-text" id="progressText">Initializing Banking AI...</p>
                 </div>
                 
                 <div id="trainingResult" class="result-panel hidden">
                     <div class="result-grid">
                         <div class="result-item">
-                            <span class="result-label">AI Accuracy</span>
+                            <span class="result-label">Local Model Accuracy</span>
                             <span class="result-value accent" id="resultAccuracy">--</span>
                         </div>
                         <div class="result-item">
-                            <span class="result-label">Error Rate</span>
+                            <span class="result-label">Training Loss</span>
                             <span class="result-value" id="resultLoss">--</span>
                         </div>
                         <div class="result-item">
-                            <span class="result-label">Outcomes</span>
+                            <span class="result-label">Classes</span>
                             <span class="result-value" id="resultClasses">--</span>
                         </div>
                     </div>
@@ -202,14 +202,14 @@
             <!-- ─── Step 4: Prediction ─── -->
             <section class="card predict-card" id="predictSection">
                 <div class="card-header">
-                    <h2><i class="fa-solid fa-stethoscope"></i> Step 4: Use AI for Predictions</h2>
+                    <h2><i class="fa-solid fa-calculator"></i> Step 4: Risk & Fraud Assessment</h2>
                 </div>
                 
                 <div class="predict-toggle">
                     <label class="toggle-label">
                         <input type="checkbox" id="useGlobalModel">
                         <span class="toggle-slider"></span>
-                        <span style="font-size: 0.95rem;">Use the <b>Global Network AI</b> (Trained by all hospitals)</span>
+                        <span style="font-size: 0.95rem;">Use the <b>Global Banking FL Model</b> (Trained collaboratively across all bank nodes)</span>
                     </label>
                 </div>
                 

@@ -1,8 +1,20 @@
 import torch
 import numpy as np
-import shap
-import lime
-import lime.lime_tabular
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    shap = None
+    SHAP_AVAILABLE = False
+
+try:
+    import lime
+    import lime.lime_tabular
+    LIME_AVAILABLE = True
+except ImportError:
+    lime = None
+    LIME_AVAILABLE = False
+
 import warnings
 warnings.filterwarnings("ignore")
 

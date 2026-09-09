@@ -3,28 +3,32 @@ import time
 import requests
 import os
 
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 def main():
     # Detect the correct path
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     server_dir = os.path.join(root_dir, "server")
     client_dir = os.path.join(root_dir, "client")
 
-    print("🚀 Starting Healthcare FL System Re-organized Demo...")
+    print("[FedVault AI] Starting Banking Systems Federated Learning Platform...")
     
     # 1. Start Server
-    print("Starting Central Server (FastAPI)...")
+    print("Starting Financial Aggregation Server (FastAPI)...")
     server_process = subprocess.Popen(
-        ["uvicorn", "server:app", "--port", "8000", "--host", "0.0.0.0"],
+        [sys.executable, "-m", "uvicorn", "server:app", "--port", "8000", "--host", "0.0.0.0"],
         cwd=server_dir
     )
     
     # Wait for the server to initialize
     time.sleep(5)
     
-    # 2. Start Hospital Client
-    print("Starting Hospital Client Node (FastAPI)...")
+    # 2. Start Bank Client Node
+    print("Starting Bank Client Node (FastAPI)...")
     client_process = subprocess.Popen(
-        ["uvicorn", "client_app:app", "--port", "8001", "--host", "0.0.0.0"],
+        [sys.executable, "-m", "uvicorn", "client_app:app", "--port", "8001", "--host", "0.0.0.0"],
         cwd=client_dir
     )
     

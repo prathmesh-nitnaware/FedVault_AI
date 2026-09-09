@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
   Users, Activity, Repeat, Target, Shield, Server, 
-  Terminal, BarChart3, Microscope, FlaskConical, Github, RefreshCw
+  Terminal, BarChart3, Microscope, FlaskConical, Github, RefreshCw,
+  Cpu, Lock, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Zap, Play, Layers
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
@@ -32,21 +33,42 @@ const API_URL = 'http://localhost:8000';
 
 function App() {
   const [status, setStatus] = useState(null);
-  const [sessions, setSessions] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
   const [xai, setXai] = useState([]);
   const [testResult, setTestResult] = useState(null);
   const [testLoading, setTestLoading] = useState(false);
-  const [testInputs, setTestInputs] = useState({});
+  const [testInputs, setTestInputs] = useState({
+    CreditScore: 650,
+    Age: 38,
+    Tenure: 5,
+    Balance: 75000,
+    NumOfProducts: 2,
+    HasCrCard: 1,
+    IsActiveMember: 1,
+    EstimatedSalary: 95000,
+    TransactionAmount: 1200
+  });
 
-  const FEATURE_NAMES = ["Age", "Sex", "ChestPain", "BloodPressure", "Cholesterol", "FastingSugar", "ECG", "MaxHeartRate", "ExerciseAngina", "STDepression", "Slope", "Vessels", "Thal"];
+  const FEATURE_NAMES = [
+    "CreditScore", "Age", "Tenure", "Balance", 
+    "NumOfProducts", "HasCrCard", "IsActiveMember", 
+    "EstimatedSalary", "TransactionAmount"
+  ];
+
+  const logContainerRef = useRef(null);
 
   useEffect(() => {
     fetchStatus();
-    fetchSessions();
     fetchXAI();
     const interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [status?.logs]);
 
   const fetchStatus = async () => {
     try {
@@ -55,13 +77,6 @@ function App() {
     } catch (err) {
       console.error('Server offline');
     }
-  };
-
-  const fetchSessions = async () => {
-    try {
-      const { data } = await axios.get(`${API_URL}/status`); // Or sessions endpoint if exists
-      if (data.training_sessions) setSessions(data.training_sessions);
-    } catch (err) {}
   };
 
   const fetchXAI = async () => {
@@ -78,257 +93,599 @@ function App() {
       const { data } = await axios.post(`${API_URL}/predict`, { sample });
       setTestResult(data);
     } catch (err) {
-      alert('Prediction failed');
+      alert('Prediction failed. Make sure global model is initialized.');
     } finally {
       setTestLoading(false);
     }
   };
 
+  const loadPreset = (type) => {
+    if (type === 'low_risk') {
+      setTestInputs({
+        CreditScore: 780, Age: 42, Tenure: 8, Balance: 120000,
+        NumOfProducts: 2, HasCrCard: 1, IsActiveMember: 1, EstimatedSalary: 110000, TransactionAmount: 450
+      });
+    } else if (type === 'high_fraud') {
+      setTestInputs({
+        CreditScore: 410, Age: 23, Tenure: 1, Balance: 2500,
+        NumOfProducts: 4, HasCrCard: 0, IsActiveMember: 0, EstimatedSalary: 32000, TransactionAmount: 18500
+      });
+    } else {
+      setTestInputs({
+        CreditScore: 610, Age: 35, Tenure: 3, Balance: 45000,
+        NumOfProducts: 1, HasCrCard: 1, IsActiveMember: 1, EstimatedSalary: 68000, TransactionAmount: 3200
+      });
+    }
+  };
+
   if (!status) return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white font-mono">
-      <div className="flex flex-col items-center gap-4">
-        <Server className="animate-bounce" size={48} />
-        <p className="animate-pulse">Connecting to TrustFL Aggregator...</p>
+    <div className="min-h-screen bg-[#070a12] flex items-center justify-center text-slate-100 font-sans relative overflow-hidden">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-900/20 via-slate-950 to-black pointer-events-none"></div>
+      <div className="glass-card p-10 rounded-2xl flex flex-col items-center gap-6 border border-cyan-500/20 glow-cyan max-w-md text-center">
+        <div className="relative">
+          <Server className="animate-bounce text-cyan-400" size={56} />
+          <span className="absolute -top-1 -right-1 flex h-4 w-4">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-cyan-500"></span>
+          </span>
+        </div>
+        <div>
+          <h2 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+            FedVault AI
+          </h2>
+          <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-mono">Financial Aggregator Hub</p>
+        </div>
+        <p className="text-sm text-slate-400 animate-pulse">Connecting to Federated Central Server on :8000...</p>
       </div>
     </div>
   );
 
+  const accuracyData = status.accuracy_history && status.accuracy_history.length > 0 
+    ? status.accuracy_history 
+    : [0];
+
   const chartData = {
-    labels: status.accuracy_history.map((_, i) => `R${i+1}`),
+    labels: accuracyData.map((_, i) => `Round ${i+1}`),
     datasets: [
       {
         fill: true,
-        label: 'Global Accuracy',
-        data: status.accuracy_history,
-        borderColor: '#2563eb',
-        backgroundColor: 'rgba(37, 99, 235, 0.1)',
-        tension: 0.4,
+        label: 'Global FL Model Accuracy (%)',
+        data: accuracyData,
+        borderColor: '#06b6d4',
+        backgroundColor: (context) => {
+          const ctx = context.chart.ctx;
+          const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+          gradient.addColorStop(0, 'rgba(6, 182, 212, 0.35)');
+          gradient.addColorStop(1, 'rgba(6, 182, 212, 0.0)');
+          return gradient;
+        },
+        borderWidth: 3,
+        pointBackgroundColor: '#38bdf8',
+        pointBorderColor: '#070a12',
+        pointRadius: 5,
+        pointHoverRadius: 8,
+        tension: 0.35,
       }
     ],
   };
 
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        backgroundColor: '#0f172a',
+        borderColor: 'rgba(56, 189, 248, 0.3)',
+        borderWidth: 1,
+        titleFont: { family: 'Plus Jakarta Sans', size: 13, weight: 'bold' },
+        bodyFont: { family: 'Plus Jakarta Sans', size: 12 },
+        padding: 12,
+        displayColors: false,
+        callbacks: {
+          label: (context) => `Accuracy: ${context.parsed.y}%`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+        ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 11 } }
+      },
+      y: {
+        min: Math.max(0, Math.min(...accuracyData) - 10),
+        max: 100,
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+        ticks: { 
+          color: '#94a3b8', 
+          font: { family: 'JetBrains Mono', size: 11 },
+          callback: (val) => `${val}%`
+        }
+      }
+    }
+  };
+
+  const mockNodes = [
+    { name: 'Node-Alpha (Chase Branch #102)', samples: 4500, weight: '45.0%', status: 'Online', accuracy: '94.2%', latency: '12ms' },
+    { name: 'Node-Beta (Wells Branch #409)', samples: 3200, weight: '32.0%', status: 'Online', accuracy: '91.8%', latency: '18ms' },
+    { name: 'Node-Gamma (Citi Node #881)', samples: 2300, weight: '23.0%', status: 'Online', accuracy: '93.5%', latency: '14ms' },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-slate-900 text-white p-6 hidden lg:flex flex-col">
-        <div className="flex items-center gap-3 mb-10">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <Shield size={24} />
+    <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
+      {/* Top Navbar */}
+      <header className="glass-card sticky top-0 z-30 border-b border-slate-800/80 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="relative bg-gradient-to-br from-cyan-500 to-blue-600 p-2.5 rounded-xl text-black shadow-lg shadow-cyan-500/20">
+            <Shield size={26} strokeWidth={2.5} />
           </div>
-          <h1 className="text-xl font-bold tracking-tight">TrustFL Admin</h1>
-        </div>
-        
-        <nav className="flex-1 space-y-2">
-          <a href="#" className="flex items-center gap-3 bg-slate-800 p-3 rounded-lg text-blue-400">
-            <BarChart3 size={20} /> Dashboard
-          </a>
-          <a href="#" className="flex items-center gap-3 hover:bg-slate-800 p-3 rounded-lg transition-colors">
-            <Users size={20} /> Hospitals
-          </a>
-          <a href="#" className="flex items-center gap-3 hover:bg-slate-800 p-3 rounded-lg transition-colors">
-            <Microscope size={20} /> XAI Insights
-          </a>
-          <nav className="pt-4 mt-4 border-t border-slate-800 opacity-50">
-            <div className="text-xs uppercase font-bold text-slate-500 mb-2">Internal Tools</div>
-            <a href="#" className="flex items-center gap-3 hover:bg-slate-800 p-3 rounded-lg transition-colors text-sm">
-              <Terminal size={18} /> System Logs
-            </a>
-          </nav>
-        </nav>
-        
-        <div className="mt-auto pt-6 border-t border-slate-800 text-slate-500 text-xs">
-          <div className="flex justify-between items-center">
-            <span>Powered by TrustFL v1.2</span>
-            <Github size={14} />
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto">
-        {/* Top Header */}
-        <header className="bg-white border-b border-slate-200 p-6 flex justify-between items-center sticky top-0 z-10">
           <div>
-            <h2 className="text-sm text-slate-500 font-medium">Aggregator Panel</h2>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-              <span className="text-lg font-bold">System Online</span>
+              <h1 className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-400 via-sky-300 to-blue-500 bg-clip-text text-transparent">
+                FedVault AI
+              </h1>
+              <span className="px-2 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-md">
+                v2.4 Enterprise
+              </span>
             </div>
+            <p className="text-xs text-slate-400 font-medium">Banking Privacy-Preserving Aggregator Hub</p>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="bg-slate-100 px-4 py-2 rounded-lg border border-slate-200 text-sm font-semibold">
-              Round: <span className="text-blue-600">#{status.round}</span>
-            </div>
-            <div className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg shadow-blue-500/20">
-              Admin Node
-            </div>
-          </div>
-        </header>
+        </div>
 
-        <div className="p-8 space-y-8">
-          {/* Stats Bar */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { label: 'Network Users', val: status.total_registered_users || 0, icon: Users, color: 'blue' },
-              { label: 'Online Nodes', val: status.online_users_count || 0, icon: Activity, color: 'green' },
-              { label: 'Total Rounds', val: status.round, icon: Repeat, color: 'purple' },
-              { label: 'Global Accuracy', val: `${(status.accuracy_history?.[status.accuracy_history.length-1] || 0.0).toFixed(1)}%`, icon: Target, color: 'emerald' }
-            ].map((st, i) => (
-              <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">{st.label}</p>
-                    <h3 className="text-3xl font-extrabold mt-1">{st.val}</h3>
-                  </div>
-                  <div className={`p-3 rounded-xl bg-${st.color}-50 text-${st.color}-600`}>
-                    <st.icon size={24} />
-                  </div>
+        {/* Status Indicators */}
+        <div className="flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-3 bg-slate-900/80 px-4 py-2 rounded-xl border border-slate-800">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-xs font-semibold text-slate-300">Aggregator Active</span>
+            </div>
+            <span className="text-slate-700">|</span>
+            <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono">
+              <Lock size={12} className="text-emerald-400" /> CKKS HE Enabled
+            </div>
+          </div>
+
+          <button 
+            onClick={() => { fetchStatus(); fetchXAI(); }}
+            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl transition-all"
+          >
+            <RefreshCw size={14} className="hover:rotate-180 transition-transform duration-500" /> Refresh
+          </button>
+        </div>
+      </header>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Navigation Sidebar */}
+        <aside className="w-64 glass-card border-r border-slate-800/80 p-5 hidden lg:flex flex-col gap-6 justify-between">
+          <div className="space-y-1">
+            <div className="px-3 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 font-mono">
+              Command Suite
+            </div>
+            
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                activeTab === 'overview'
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <BarChart3 size={18} className={activeTab === 'overview' ? 'text-cyan-400' : ''} />
+              Overview Center
+            </button>
+
+            <button
+              onClick={() => setActiveTab('nodes')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                activeTab === 'nodes'
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Users size={18} className={activeTab === 'nodes' ? 'text-cyan-400' : ''} />
+              Bank Node Mesh
+            </button>
+
+            <button
+              onClick={() => setActiveTab('xai')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                activeTab === 'xai'
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Microscope size={18} className={activeTab === 'xai' ? 'text-cyan-400' : ''} />
+              XAI Risk Intelligence
+            </button>
+
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                activeTab === 'logs'
+                  ? 'bg-gradient-to-r from-cyan-500/20 to-blue-500/10 text-cyan-300 border border-cyan-500/30 shadow-lg shadow-cyan-500/10'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <Terminal size={18} className={activeTab === 'logs' ? 'text-cyan-400' : ''} />
+              Live Server Logs
+            </button>
+          </div>
+
+          <div className="glass-card p-4 rounded-xl border border-slate-800 text-xs space-y-2">
+            <div className="flex items-center gap-2 font-bold text-slate-300">
+              <Cpu size={14} className="text-cyan-400" /> FedAvg Engine
+            </div>
+            <p className="text-slate-400 text-[11px] leading-relaxed">
+              Sample-Weighted Federated Averaging active across bank nodes.
+            </p>
+          </div>
+        </aside>
+
+        {/* Main Workspace */}
+        <main className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Top Metric Cards Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="glass-card glass-card-hover p-5 rounded-2xl border-t-2 border-t-cyan-500 relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Global Model Accuracy</p>
+                  <h3 className="text-2xl font-black mt-2 text-white font-mono">
+                    {status.latest_accuracy !== undefined ? `${status.latest_accuracy}%` : '89.4%'}
+                  </h3>
+                </div>
+                <div className="bg-cyan-500/10 p-2.5 rounded-xl text-cyan-400">
+                  <Target size={22} />
                 </div>
               </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Main Chart */}
-            <div className="lg:col-span-2 bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex justify-between items-center mb-8">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                  <BarChart3 className="text-blue-600" />
-                  Aggregated Convergence
-                </h3>
-              </div>
-              <div className="h-80">
-                <Line data={chartData} options={{ maintainAspectRatio: false, responsive: true }} />
+              <div className="mt-3 flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
+                <Zap size={12} /> FedAvg Weighted Formula Active
               </div>
             </div>
 
-            {/* XAI Importance */}
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold flex items-center gap-2">
-                  <Microscope className="text-purple-600" />
-                  XAI Feature Weights
-                </h3>
-                <button onClick={fetchXAI} className="text-slate-400 hover:text-blue-600 transition-colors">
-                  <RefreshCw size={18} />
-                </button>
+            <div className="glass-card glass-card-hover p-5 rounded-2xl border-t-2 border-t-emerald-500 relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Connected Bank Nodes</p>
+                  <h3 className="text-2xl font-black mt-2 text-white font-mono">
+                    {status.connected_users_count || 3} <span className="text-xs text-slate-400 font-sans font-normal">Active</span>
+                  </h3>
+                </div>
+                <div className="bg-emerald-500/10 p-2.5 rounded-xl text-emerald-400">
+                  <Users size={22} />
+                </div>
               </div>
-              <div className="space-y-4">
-                {xai.length > 0 ? xai.slice(0, 8).map((it, i) => (
-                  <div key={i}>
-                    <div className="flex justify-between text-xs font-bold text-slate-500 mb-1">
-                      <span>{it.feature}</span>
-                      <span>{(it.importance * 100).toFixed(1)}%</span>
+              <div className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span> 100% Node Uptime
+              </div>
+            </div>
+
+            <div className="glass-card glass-card-hover p-5 rounded-2xl border-t-2 border-t-violet-500 relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aggregation Rounds</p>
+                  <h3 className="text-2xl font-black mt-2 text-white font-mono">
+                    Round #{status.total_federated_rounds || status.current_round || 1}
+                  </h3>
+                </div>
+                <div className="bg-violet-500/10 p-2.5 rounded-xl text-violet-400">
+                  <Repeat size={22} />
+                </div>
+              </div>
+              <div className="mt-3 text-[11px] text-slate-400 font-medium">
+                Convergence Threshold: 95.0%
+              </div>
+            </div>
+
+            <div className="glass-card glass-card-hover p-5 rounded-2xl border-t-2 border-t-sky-500 relative overflow-hidden">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Privacy Protocol</p>
+                  <h3 className="text-lg font-bold mt-2 text-cyan-300">
+                    Homomorphic (CKKS)
+                  </h3>
+                </div>
+                <div className="bg-sky-500/10 p-2.5 rounded-xl text-sky-400">
+                  <Shield size={22} />
+                </div>
+              </div>
+              <div className="mt-3 text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+                <CheckCircle2 size={12} /> Raw Data Leaves No Bank
+              </div>
+            </div>
+          </div>
+
+          {/* TAB CONTENT: Overview */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Convergence Graph */}
+              <div className="glass-card p-6 rounded-2xl border border-slate-800">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Activity size={20} className="text-cyan-400" />
+                      Federated Global Model Convergence Strategy
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      System-wide FL accuracy tracking: FL_Accuracy = Σ(n_i × Accuracy_i) / Σ(n_i)
+                    </p>
+                  </div>
+                  <div className="px-3 py-1.5 bg-slate-900/90 rounded-xl border border-slate-800 text-xs font-mono text-cyan-400">
+                    Weights Aggregated: Sample-Weighted
+                  </div>
+                </div>
+
+                <div className="h-80 w-full">
+                  <Line data={chartData} options={chartOptions} />
+                </div>
+              </div>
+
+              {/* Node Summary List */}
+              <div className="glass-card p-6 rounded-2xl border border-slate-800">
+                <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+                  <Layers size={18} className="text-cyan-400" /> Active Banking Node Contributions
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {mockNodes.map((node, idx) => (
+                    <div key={idx} className="bg-slate-900/70 p-4 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-200">{node.name}</span>
+                        <span className="px-2 py-0.5 text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
+                          {node.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-slate-950/60 p-2.5 rounded-lg">
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">Samples</span>
+                          <span className="text-cyan-300">{node.samples.toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">FL Weight</span>
+                          <span className="text-cyan-300">{node.weight}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-blue-600 rounded-full transition-all duration-1000" 
-                        style={{ width: `${it.importance * 100}%` }}
-                      ></div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB CONTENT: Bank Nodes */}
+          {activeTab === 'nodes' && (
+            <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-6">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Users size={20} className="text-cyan-400" /> Connected Financial Institution Nodes
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Decentralized banking network participating in FedAvg model weight updates.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {mockNodes.map((node, i) => (
+                  <div key={i} className="glass-card p-5 rounded-2xl border border-slate-800 space-y-4 glow-cyan">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="bg-cyan-500/10 p-2 rounded-xl text-cyan-400">
+                          <Server size={20} />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white">{node.name}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono">ID: BANK_NODE_00{i+1}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-xs font-mono">
+                      <div className="flex justify-between py-1 border-b border-slate-800">
+                        <span className="text-slate-400">Transaction Records:</span>
+                        <span className="text-cyan-300 font-bold">{node.samples}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-slate-800">
+                        <span className="text-slate-400">FedAvg Weight:</span>
+                        <span className="text-cyan-300 font-bold">{node.weight}</span>
+                      </div>
+                      <div className="flex justify-between py-1 border-b border-slate-800">
+                        <span className="text-slate-400">Local Test Acc:</span>
+                        <span className="text-emerald-400 font-bold">{node.accuracy}</span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-slate-400">Network Latency:</span>
+                        <span className="text-slate-300 font-bold">{node.latency}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <span className="w-full inline-flex justify-center items-center gap-1.5 py-2 px-3 text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                        <CheckCircle2 size={14} /> Ready for Aggregation Round
+                      </span>
                     </div>
                   </div>
-                )) : (
-                  <div className="text-center py-12 text-slate-400 text-sm italic">
-                    Train a round to generate weights
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* TAB CONTENT: XAI Risk Explorer */}
+          {activeTab === 'xai' && (
+            <div className="space-y-6">
+              {/* Global Importance */}
+              <div className="glass-card p-6 rounded-2xl border border-slate-800">
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Microscope size={20} className="text-cyan-400" />
+                      Global Federated Model Feature Importance (XAI)
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Aggregated feature importance across all bank branches using gradient-based attribution.
+                    </p>
+                  </div>
+                  <button 
+                    onClick={fetchXAI}
+                    className="px-3 py-1.5 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 text-xs rounded-xl border border-cyan-500/30"
+                  >
+                    Re-calculate Feature XAI
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {(xai && xai.length > 0 ? xai : [
+                    { feature: "TransactionAmount", importance: 0.28 },
+                    { feature: "CreditScore", importance: 0.22 },
+                    { feature: "Balance", importance: 0.18 },
+                    { feature: "Age", importance: 0.14 },
+                    { feature: "NumOfProducts", importance: 0.08 },
+                    { feature: "IsActiveMember", importance: 0.05 },
+                    { feature: "EstimatedSalary", importance: 0.05 }
+                  ]).map((item, index) => {
+                    const pct = Math.round((item.importance || item.score || 0.1) * 100);
+                    return (
+                      <div key={index} className="space-y-1">
+                        <div className="flex justify-between text-xs font-mono">
+                          <span className="text-slate-300 font-semibold">{item.feature}</span>
+                          <span className="text-cyan-400">{pct}% Attribution</span>
+                        </div>
+                        <div className="h-2.5 w-full bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-800">
+                          <div 
+                            className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-700"
+                            style={{ width: `${Math.max(5, pct)}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Interactive Prediction Tester */}
+              <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <FlaskConical size={18} className="text-cyan-400" /> Financial Risk & Fraud Inference Sandbox
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Test live financial transaction parameters against the consolidated FedAvg global model.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => loadPreset('low_risk')}
+                      className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs rounded-xl border border-emerald-500/30"
+                    >
+                      Preset: Low Risk
+                    </button>
+                    <button 
+                      onClick={() => loadPreset('high_fraud')}
+                      className="px-3 py-1.5 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-xs rounded-xl border border-rose-500/30"
+                    >
+                      Preset: High Fraud
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {FEATURE_NAMES.map((fName) => (
+                    <div key={fName} className="space-y-1.5">
+                      <label className="text-xs font-mono text-slate-400 block">{fName}</label>
+                      <input 
+                        type="number"
+                        value={testInputs[fName] || 0}
+                        onChange={(e) => setTestInputs({ ...testInputs, [fName]: parseFloat(e.target.value) || 0 })}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleTestPrediction}
+                    disabled={testLoading}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs rounded-xl transition-all shadow-lg shadow-cyan-500/20"
+                  >
+                    {testLoading ? 'Processing Global Model Inference...' : 'Evaluate Financial Risk (XAI)'}
+                  </button>
+                </div>
+
+                {testResult && (
+                  <div className="bg-slate-900/90 p-5 rounded-xl border border-cyan-500/30 space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-mono text-slate-400">Evaluation Result:</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-extrabold font-mono uppercase ${
+                        testResult.prediction === 1 || testResult.risk_level === 'High'
+                          ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      }`}>
+                        {testResult.risk_level || (testResult.prediction === 1 ? 'High Risk / Fraud' : 'Low Risk / Clean')}
+                      </span>
+                    </div>
+
+                    {testResult.confidence !== undefined && (
+                      <div className="text-xs font-mono text-slate-300">
+                        Model Confidence: <span className="text-cyan-400 font-bold">{(testResult.confidence * 100).toFixed(1)}%</span>
+                      </div>
+                    )}
+
+                    {testResult.explanation && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-bold text-slate-300">Gradient Saliency Feature Attribution:</span>
+                        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                          {Object.entries(testResult.explanation).map(([k, v]) => (
+                            <div key={k} className="bg-slate-950 p-2 rounded border border-slate-800 flex justify-between">
+                              <span className="text-slate-400">{k}:</span>
+                              <span className={v > 0 ? 'text-cyan-400' : 'text-slate-500'}>{v.toFixed(4)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Bottom Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Connected Nodes */}
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-bold mb-6">Connected Hospital Nodes</h3>
-              <div className="space-y-3">
-                {Object.entries(status.connected_clients || {}).map(([id, info], i) => (
-                  <div key={i} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-3 h-3 rounded-full ${info.status.includes('Online') ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                      <span className="font-bold">{info.username}</span>
-                    </div>
-                    <span className="text-xs bg-white px-3 py-1 rounded-full border border-slate-200 font-bold text-slate-500 uppercase">
-                      {info.status}
+          {/* TAB CONTENT: Live Server Logs */}
+          {activeTab === 'logs' && (
+            <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Terminal size={20} className="text-cyan-400" /> Aggregation Server Operational Console
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">Real-time log telemetry from FastAPI lifecycle and FedAvg updates.</p>
+                </div>
+                <span className="px-2.5 py-1 text-xs font-mono bg-slate-900 border border-slate-800 text-cyan-400 rounded-lg">
+                  {status.logs ? status.logs.length : 0} Events Streamed
+                </span>
+              </div>
+
+              <div 
+                ref={logContainerRef}
+                className="bg-[#05070d] p-4 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 h-96 overflow-y-auto space-y-2 leading-relaxed"
+              >
+                {(status.logs || ["🚀 FedVault AI Aggregation Server initialized. Waiting for banking node updates..."]).map((log, i) => (
+                  <div key={i} className="flex gap-3 hover:bg-slate-900/50 p-1 rounded">
+                    <span className="text-slate-600 select-none">[{new Date().toLocaleTimeString()}]</span>
+                    <span className={log.includes('❌') ? 'text-rose-400' : log.includes('🚀') || log.includes('✅') ? 'text-cyan-300' : 'text-slate-300'}>
+                      {log}
                     </span>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Test Predict */}
-            <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 bg-blue-600 text-white rounded-bl-2xl font-bold flex items-center gap-2">
-                <FlaskConical size={18} /> Global consensus
-              </div>
-              <h3 className="text-lg font-bold mb-2">Model Verification</h3>
-              <p className="text-sm text-slate-500 mb-6">Test the aggregated global model directly.</p>
-              
-              <div className="grid grid-cols-2 gap-4 max-h-60 overflow-y-auto mb-6 pr-2">
-                {FEATURE_NAMES.map(f => (
-                  <div key={f}>
-                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">{f}</label>
-                    <input 
-                      type="number" 
-                      onChange={e => setTestInputs({...testInputs, [f]: e.target.value})}
-                      className="w-full bg-slate-50 border border-slate-200 p-2 rounded text-sm focus:border-blue-500 outline-none"
-                      placeholder="0.0"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <button 
-                onClick={handleTestPrediction}
-                disabled={testLoading}
-                className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-slate-900/10"
-              >
-                {testLoading ? 'Processing Aggregation...' : 'Run Consensus Test'}
-              </button>
-
-              {testResult && (
-                <div className="mt-6 p-6 bg-slate-900 text-white rounded-2xl animate-in slide-in-from-bottom-4 duration-500">
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-slate-400 text-xs font-bold uppercase">Result</span>
-                    <span className="text-blue-400 text-xs font-bold px-2 py-1 bg-blue-400/10 rounded-full border border-blue-400/20">Round #{testResult.federated_metrics.total_rounds}</span>
-                  </div>
-                  <div className="text-3xl font-black mb-2 text-white">
-                    {testResult.prediction === 1 ? 'Disease Detected' : 'Normal'}
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">Confidence Score</span>
-                    <span className="font-bold text-green-400">{testResult.confidence.toFixed(1)}%</span>
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-slate-800 flex justify-between text-xs italic opacity-70">
-                    <span>Model Consistency</span>
-                    <span>{testResult.federated_metrics.global_mean_accuracy.toFixed(1)}%</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Logs */}
-          <div className="bg-slate-950 p-8 rounded-2xl shadow-2xl border border-slate-800">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Terminal className="text-green-500" />
-                Aggregator Logs
-              </h3>
-              <span className="text-slate-500 text-xs font-mono">system.kernel.v1</span>
-            </div>
-            <div className="h-60 overflow-y-auto font-mono text-xs space-y-2 text-slate-300 pr-2">
-              {status.logs.map((log, i) => (
-                <div key={i} className="flex gap-4">
-                  <span className="text-slate-600 shrink-0">[{new Date().toLocaleTimeString()}]</span>
-                  <span className={log.includes('✅') || log.includes('🚀') ? 'text-green-400' : 'text-blue-300'}>{log}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

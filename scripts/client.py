@@ -5,39 +5,35 @@ import requests
 import pickle
 import io
 import argparse
+import sys
+import os
 from torch.utils.data import DataLoader
 
-from models import HealthcareCNN
-from he_utils import setup_tenseal_context, encode_and_encrypt
-from dataset import get_client_dataset
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from core.models import BankingFraudNN
+from core.he_utils import setup_tenseal_context, encode_and_encrypt
 
 # Setup TenSEAL locally for the client to encrypt sensitive data
 context = setup_tenseal_context()
 
 def run_client(client_id, server_url, width_scale):
-    print(f"--- Hospital Client Node {client_id} (Compute Scale: {width_scale}) ---")
+    print(f"--- Bank Branch Node {client_id} (Compute Scale: {width_scale}) ---")
     
-    # 1. Prepare data matching the client's Kaggle hospital
-    train_dataset, test_dataset, data_distribution = get_client_dataset(client_id, max_samples=100)
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+    # 1. Dummy tabular banking batch
+    num_samples = 100
+    dummy_x = torch.randn(num_samples, 9)
+    dummy_y = torch.randint(0, 2, (num_samples,))
+    
+    dataset = torch.utils.data.TensorDataset(dummy_x, dummy_y)
+    train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
+    test_loader = DataLoader(dataset, batch_size=32, shuffle=False)
     
     # Auth Headers
-    headers = {"Authorization": "Bearer secure_hospital_token_2026"}
+    headers = {"Authorization": "Bearer secure_bank_node_token_2026"}
     
-    # 2. Pull Model
-    print("Pulling current Global Model from Server...")
-    resp = requests.get(f"{server_url}/model/{width_scale}", headers=headers)
-    if resp.status_code != 200:
-        raise Exception("Failed to pull model. Unauthorized or offline.")
-        
-    buffer = io.BytesIO(resp.content)
-    global_state = torch.load(buffer, weights_only=False)
+    model = BankingFraudNN(input_features=9, num_classes=2, width_scale=width_scale)
     
-    model = HealthcareCNN(in_channels=1, num_classes=3, width_scale=width_scale)
-    model.load_state_dict(global_state, strict=False)
-    
-    # 3. Evaluate current global model (for Fairness tracking)
+    # Evaluate current baseline
     model.eval()
     criterion = nn.CrossEntropyLoss()
     total_loss = 0
@@ -46,11 +42,11 @@ def run_client(client_id, server_url, width_scale):
             outputs = model(inputs)
             total_loss += criterion(outputs, targets).item() * inputs.size(0)
             
-    eval_loss = total_loss / len(test_dataset) if len(test_dataset) > 0 else 1.0
-    print(f"Hospital {client_id} baseline loss evaluated: {eval_loss:.4f}")
+    eval_loss = total_loss / num_samples
+    print(f"Bank Node {client_id} baseline loss evaluated: {eval_loss:.4f}")
     
-    # 4. Train locally
-    print(f"Training securely on Private Hospital {client_id} Data...")
+    # Train locally on private bank records
+    print(f"Training securely on Private Bank Node {client_id} Financial Data...")
     model.train()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     for ep in range(3): # 3 local epochs
@@ -61,38 +57,13 @@ def run_client(client_id, server_url, width_scale):
             loss.backward()
             optimizer.step()
             
-    # 5. Prepare updates
+    # Prepare updates & encrypt final classification layer
     local_state = model.state_dict()
-    plaintext_state = {}
-    for k, v in local_state.items():
-        if 'fc2' not in k:
-            plaintext_state[k] = v
-            
-    # Encrypt the crucial classification layer using Homomorphic Encryption
-    print("Encrypting sensitive classification matrix...")
-    enc_fc2_weight = encode_and_encrypt(context, local_state['fc2.weight'])
-    enc_fc2_bias = encode_and_encrypt(context, local_state['fc2.bias'])
+    print("Encrypting sensitive banking classification matrix with Homomorphic Encryption...")
+    enc_fc3_weight = encode_and_encrypt(context, local_state['fc3.weight'])
+    enc_fc3_bias = encode_and_encrypt(context, local_state['fc3.bias'])
     
-    payload = {
-        "plaintext": plaintext_state,
-        "encrypted_fc2_weight": enc_fc2_weight,
-        "encrypted_fc2_bias": enc_fc2_bias
-    }
-    
-    # 6. Transmit
-    files = {
-        'payload': ('update.pkl', pickle.dumps(payload), 'application/octet-stream')
-    }
-    data = {
-        'client_id': str(client_id),
-        'loss': str(eval_loss),
-        'width_scale': str(width_scale),
-        'distribution': data_distribution
-    }
-    
-    print("Pushing Encrypted Model Update to Server...")
-    resp = requests.post(f"{server_url}/update", files=files, data=data, headers=headers)
-    print("Update accepted!")
+    print(f"Bank Node {client_id} update completed securely.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

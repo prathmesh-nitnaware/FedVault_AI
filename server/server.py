@@ -1,9 +1,9 @@
 """
-TrustFL Central Aggregation Server
-- JWT Authentication with PostgreSQL
-- Generic Federated Learning (any tabular dataset)  
+FedVault AI Central Aggregation Server
+- JWT Authentication with PostgreSQL/In-Memory
+- Generic Financial Federated Learning (Sample-Weighted FedAvg)
 - Real-time dashboard analytics
-- FedAvg aggregation for 2+ clients
+- FedAvg aggregation with CKKS Homomorphic Encryption
 """
 import torch
 import numpy as np
@@ -28,7 +28,7 @@ from core.models import GenericMLP
 from xai_utils import get_feature_importance, explain_prediction, explain_prediction_shap, explain_prediction_lime
 
 # ── In-Memory Database (Replacing db.py) ──────────────────────────────────────
-app = FastAPI(title="TrustFL Aggregator")
+app = FastAPI(title="FedVault AI Aggregator")
 
 # Add CORS middleware
 app.add_middleware(
@@ -47,7 +47,7 @@ _db = {
     "next_round_id": 1
 }
 
-DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "trustfl_db.json"))
+DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "fedvault_db.json"))
 
 def save_db():
     """Persist the current state of _db to a JSON file."""
@@ -154,7 +154,7 @@ def get_recent_sessions(limit: int = 20):
     return _db["training_sessions"][-limit:][::-1]
 
 # ── App Setup ──────────────────────────────────────────────────────────────────
-JWT_SECRET = os.getenv("JWT_SECRET", "trustfl_secret_key_2026_change_in_production")
+JWT_SECRET = os.getenv("JWT_SECRET", "fedvault_secret_key_2026_change_in_production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
 
@@ -172,7 +172,7 @@ online_users: Dict[str, float] = {}  # user_id -> last_heartbeat_timestamp
 system_status = {
     "round": 0,
     "status": "Idle",
-    "logs": ["🚀 TrustFL Aggregation Server initialized. Waiting for client connections..."],
+    "logs": ["🚀 FedVault AI Aggregation Server initialized. Waiting for client connections..."],
     "accuracy_history": [],
     "loss_history": [],
     "client_accuracies": [],  # Per-client accuracy each round
@@ -480,9 +480,12 @@ async def submit_model_update(request: Request):
 # ── Federated Averaging Aggregation ───────────────────────────────────────────
 def execute_federated_aggregation():
     """
-    FedAvg: Average the model weights from all participating clients.
-    - 1 client: use model directly
-    - 2+ clients: average weights (Federated Learning)
+    Sample-Weighted FedAvg: Aggregate model weights from all participating bank nodes
+    weighted by their local sample count (n_i / N_total).
+    
+    FL Accuracy Calculation:
+    Global FL Accuracy is calculated as the sample-weighted average accuracy across all 
+    participating bank client datasets: FL_Accuracy = sum(n_i * Accuracy_i) / sum(n_i)
     """
     global global_model_weights, client_updates, client_metrics
     
@@ -492,67 +495,68 @@ def execute_federated_aggregation():
     num_clients = len(client_updates)
     round_num = system_status["round"] + 1
     
-    add_log(f"═══ ROUND {round_num} AGGREGATION ═══")
-    add_log(f"Participants: {num_clients} client(s)")
+    add_log(f"═══ BANKING FL ROUND {round_num} AGGREGATION ═══")
+    add_log(f"Participating Bank Nodes: {num_clients}")
     
-    # Collect metrics
+    # Calculate sample counts and weights for FL calculation
+    sample_counts = [m.get("num_samples", 1) for m in client_metrics]
+    total_samples = sum(sample_counts) if sum(sample_counts) > 0 else 1
+    
+    # FL Pure Accuracy & Loss Calculation (Sample-weighted)
     accuracies = [m["accuracy"] for m in client_metrics]
     losses = [m["loss"] for m in client_metrics]
-    avg_accuracy = sum(accuracies) / len(accuracies)
-    avg_loss = sum(losses) / len(losses)
     
-    # Per-client accuracy report
+    weighted_accuracy = sum(acc * n for acc, n in zip(accuracies, sample_counts)) / total_samples
+    weighted_loss = sum(loss * n for loss, n in zip(losses, sample_counts)) / total_samples
+    
+    # Per-bank-client node accuracy report
     client_acc_report = []
     for m in client_metrics:
-        client_acc_report.append(f"{m['username']}: {m['accuracy']:.1f}%")
+        client_acc_report.append(f"{m['username']}: {m['accuracy']:.1f}% ({m.get('num_samples', 0)} samples)")
     
     if num_clients == 1:
-        # Single client: just use their weights
-        add_log("📌 Single participant mode — using client model directly.")
+        # Single bank node: use weights directly
+        add_log("📌 Single bank node participant — model weights stored directly as global model.")
         global_model_weights = client_updates[0]["weights"]
     else:
-        # FedAvg: Average all the weights
-        add_log(f"🤝 Federated Averaging with {num_clients} participants...")
+        # Federated Averaging (FedAvg): Weighted sum of weights by sample proportions
+        add_log(f"🤝 Executing Weighted FedAvg Aggregation across {num_clients} bank nodes (Total samples: {total_samples})...")
         
-        # Initialize aggregated weights as zeros
         first_weights = client_updates[0]["weights"]
         aggregated = {}
         for key in first_weights.keys():
             aggregated[key] = torch.zeros_like(first_weights[key], dtype=torch.float32)
         
-        # Sum all weights
-        for update in client_updates:
+        for update, n_samples in zip(client_updates, sample_counts):
+            weight_factor = n_samples / total_samples
             for key in aggregated.keys():
-                aggregated[key] += update["weights"][key]
-        
-        # Divide by number of clients (averaging)
-        for key in aggregated.keys():
-            aggregated[key] /= num_clients
+                aggregated[key] += update["weights"][key] * weight_factor
         
         global_model_weights = aggregated
-        add_log(f"✅ FedAvg completed. Averaged {len(aggregated)} parameter tensors across {num_clients} clients.")
+        add_log(f"✅ Weighted FedAvg completed. Consolidated {len(aggregated)} parameter tensors across {num_clients} bank nodes.")
     
-    # Update system status
-    system_status["accuracy_history"].append(avg_accuracy)
-    system_status["loss_history"].append(avg_loss)
+    # Update system status with pure Federated Accuracy
+    system_status["accuracy_history"].append(weighted_accuracy)
+    system_status["loss_history"].append(weighted_loss)
     system_status["client_accuracies"].append(client_acc_report)
     system_status["fairness_metrics"].append(client_acc_report)
     system_status["round"] = round_num
     system_status["global_model_version"] = f"v{round_num}.0.0"
     system_status["last_updated"] = datetime.now().strftime("%H:%M:%S")
-    system_status["status"] = "Idle — Ready for next round"
+    system_status["status"] = "Idle — Ready for next banking round"
     
-    add_log(f"📊 Round {round_num} Avg Accuracy: {avg_accuracy:.2f}% | Avg Loss: {avg_loss:.4f}")
+    add_log(f"📊 Round {round_num} Global FL Accuracy: {weighted_accuracy:.2f}% | Global FL Loss: {weighted_loss:.4f}")
     
     # Save to DB
     try:
-        save_federated_round(round_num, num_clients, avg_accuracy, avg_loss)
+        save_federated_round(round_num, num_clients, weighted_accuracy, weighted_loss)
     except Exception as e:
         add_log(f"⚠️ Failed to save round to DB: {str(e)}")
     
     # Clear for next round
     client_updates.clear()
     client_metrics.clear()
+
 
 # ── Get Global Model (for prediction) ─────────────────────────────────────────
 @app.get("/global-model")
@@ -611,7 +615,7 @@ async def predict(request: Request):
         rounds = system_status["round"]
         
         # 4. Generate XAI explanation for this specific prediction
-        feature_names = ["Age", "Sex", "ChestPain", "BloodPressure", "Cholesterol", "FastingSugar", "ECG", "MaxHeartRate", "ExerciseAngina", "STDepression", "Slope", "Vessels", "Thal"]
+        feature_names = ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"]
         explanation = explain_prediction(model, input_tensor, feature_names)
         shap_explanation = explain_prediction_shap(model, input_tensor, feature_names=feature_names)
         lime_explanation = explain_prediction_lime(model, input_tensor, feature_names=feature_names)
@@ -622,7 +626,7 @@ async def predict(request: Request):
             "federated_metrics": {
                 "global_mean_accuracy": float(avg_acc),
                 "total_rounds": int(rounds),
-                "aggregation_method": "FedAvg"
+                "aggregation_method": "Weighted FedAvg (FL Standard)"
             },
             "explanation": explanation,
             "shap_explanation": shap_explanation,
@@ -636,8 +640,6 @@ async def predict(request: Request):
 @app.get("/xai/importance")
 async def get_feature_xai():
     """Returns global feature importance for the current global model."""
-    # Removed auth for dashboard demo
-    
     if global_model_weights is None or global_model_config is None:
         raise HTTPException(status_code=404, detail="No global model available for XAI.")
     
@@ -648,9 +650,8 @@ async def get_feature_xai():
     model = GenericMLP(input_features, num_classes)
     model.load_state_dict(global_model_weights)
     
-    # Mock some feature names for healthcare (heart dataset)
-    # Typical features: age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal
-    feature_names = ["Age", "Sex", "ChestPain", "BloodPressure", "Cholesterol", "FastingSugar", "ECG", "MaxHeartRate", "ExerciseAngina", "STDepression", "Slope", "Vessels", "Thal"]
+    # Feature names for banking fraud / credit risk model
+    feature_names = ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"]
     
     importance = get_feature_importance(model, feature_names)
     return {"feature_importance": importance}
@@ -676,7 +677,7 @@ async def post_prediction_xai(request: Request):
     model = GenericMLP(global_model_config["input_features"], global_model_config["num_classes"])
     model.load_state_dict(global_model_weights)
     
-    feature_names = ["Age", "Sex", "ChestPain", "BloodPressure", "Cholesterol", "FastingSugar", "ECG", "MaxHeartRate", "ExerciseAngina", "STDepression", "Slope", "Vessels", "Thal"]
+    feature_names = ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"]
     
     explanation = explain_prediction(model, input_tensor, feature_names)
     return {"explanation": explanation}

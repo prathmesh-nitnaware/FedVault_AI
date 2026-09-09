@@ -6,8 +6,8 @@ const CLIENT_API = window.location.origin;
 const SERVER_API_DEFAULT = "http://localhost:8000"; // Fallback only
 
 // ── State ────────────────────────────────────────────────────────────────────
-let authToken = localStorage.getItem("trustfl_token") || null;
-let currentUser = JSON.parse(localStorage.getItem("trustfl_user") || "null");
+let authToken = localStorage.getItem("fedvault_token") || null;
+let currentUser = JSON.parse(localStorage.getItem("fedvault_user") || "null");
 let datasetColumns = [];
 let featureColumns = [];
 let heartbeatInterval = null;
@@ -15,7 +15,7 @@ let pollInterval = null;
 
 // ── DOM Ready ────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
-    const savedUrl = localStorage.getItem("trustfl_server_url");
+    const savedUrl = localStorage.getItem("fedvault_server_url");
     if (savedUrl) {
         if (document.getElementById("loginServerUrl")) document.getElementById("loginServerUrl").value = savedUrl;
         if (document.getElementById("signupServerUrl")) document.getElementById("signupServerUrl").value = savedUrl;
@@ -87,9 +87,9 @@ async function handleLogin() {
         
         authToken = data.token;
         currentUser = data.user;
-        localStorage.setItem("trustfl_token", authToken);
-        localStorage.setItem("trustfl_user", JSON.stringify(currentUser));
-        localStorage.setItem("trustfl_server_url", serverUrl);
+        localStorage.setItem("fedvault_token", authToken);
+        localStorage.setItem("fedvault_user", JSON.stringify(currentUser));
+        localStorage.setItem("fedvault_server_url", serverUrl);
         if (document.getElementById("serverUrl")) document.getElementById("serverUrl").value = serverUrl;
         
         showDashboard();
@@ -144,9 +144,9 @@ async function handleSignup() {
         
         authToken = data.token;
         currentUser = data.user;
-        localStorage.setItem("trustfl_token", authToken);
-        localStorage.setItem("trustfl_user", JSON.stringify(currentUser));
-        localStorage.setItem("trustfl_server_url", serverUrl);
+        localStorage.setItem("fedvault_token", authToken);
+        localStorage.setItem("fedvault_user", JSON.stringify(currentUser));
+        localStorage.setItem("fedvault_server_url", serverUrl);
         if (document.getElementById("serverUrl")) document.getElementById("serverUrl").value = serverUrl;
         
         showDashboard();
@@ -160,8 +160,8 @@ async function handleSignup() {
 function handleLogout() {
     authToken = null;
     currentUser = null;
-    localStorage.removeItem("trustfl_token");
-    localStorage.removeItem("trustfl_user");
+    localStorage.removeItem("fedvault_token");
+    localStorage.removeItem("fedvault_user");
     
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (pollInterval) clearInterval(pollInterval);

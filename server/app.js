@@ -338,7 +338,7 @@ async function fetchXAI() {
     } catch (err) {}
 }
 
-const FEATURE_NAMES = ["Age", "Sex", "ChestPain", "BloodPressure", "Cholesterol", "FastingSugar", "ECG", "MaxHeartRate", "ExerciseAngina", "STDepression", "Slope", "Vessels", "Thal"];
+const FEATURE_NAMES = ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"];
 
 function buildTestInputs() {
     const container = document.getElementById('testInputs');
@@ -376,7 +376,7 @@ document.getElementById('serverPredictBtn')?.addEventListener('click', async () 
         
         if (data.prediction !== undefined) {
             document.getElementById('testResult').classList.remove('hidden');
-            document.getElementById('testValue').textContent = data.prediction === 1 ? 'Disease Detected' : 'Normal';
+            document.getElementById('testValue').textContent = data.prediction === 1 ? 'High Risk / Fraud Detected' : 'Legitimate / Low Risk';
             document.getElementById('testConf').textContent = data.confidence.toFixed(1) + '%';
             document.getElementById('testMeanAcc').textContent = data.federated_metrics.global_mean_accuracy.toFixed(2) + '%';
             
