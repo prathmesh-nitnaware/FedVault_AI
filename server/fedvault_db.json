@@ -1,0 +1,260 @@
+{
+    "users": [
+        {
+            "id": 1,
+            "username": "B_O_1",
+            "email": "test1@gmail.com",
+            "password_hash": "$2b$12$aniew8w98d49rLGgrVkDXOle/uU442lheQvtHO/M2cfJ1BjepuGIu",
+            "created_at": "2026-09-12T01:02:49.029122",
+            "last_login": "2026-09-12T11:42:16.536477",
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "username": "B_O_2",
+            "email": "test2@gmail.com",
+            "password_hash": "$2b$12$C162AG5BVkZvinZBQXt3DexP1RFqwzi7tbfBENV8Mu3MYrJcWwsa.",
+            "created_at": "2026-09-12T01:29:43.198499",
+            "last_login": "2026-09-12T11:42:59.350366",
+            "is_active": true
+        }
+    ],
+    "training_sessions": [
+        {
+            "id": 1,
+            "user_id": 1,
+            "username": "B_O_1",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 75.0,
+            "loss": 0.47409647703170776,
+            "training_round": 1,
+            "created_at": "2026-09-12T01:12:59.066966"
+        },
+        {
+            "id": 2,
+            "user_id": 1,
+            "username": "B_O_1",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 75.0,
+            "loss": 0.5846120715141296,
+            "training_round": 1,
+            "created_at": "2026-09-12T01:27:48.871641"
+        },
+        {
+            "id": 3,
+            "user_id": 2,
+            "username": "B_O_2",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 68.75,
+            "loss": 0.6140862107276917,
+            "training_round": 2,
+            "created_at": "2026-09-12T01:29:56.437776"
+        },
+        {
+            "id": 4,
+            "user_id": 2,
+            "username": "B_O_2",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.6033291816711426,
+            "training_round": 1,
+            "created_at": "2026-09-12T10:54:05.826464"
+        },
+        {
+            "id": 5,
+            "user_id": 1,
+            "username": "B_O_1",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.6033291816711426,
+            "training_round": 2,
+            "created_at": "2026-09-12T10:54:15.423726"
+        },
+        {
+            "id": 6,
+            "user_id": 2,
+            "username": "B_O_2",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 62.5,
+            "loss": 0.6199572682380676,
+            "training_round": 1,
+            "created_at": "2026-09-12T11:20:54.607845"
+        },
+        {
+            "id": 7,
+            "user_id": 1,
+            "username": "B_O_1",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 62.5,
+            "loss": 0.6199572682380676,
+            "training_round": 2,
+            "created_at": "2026-09-12T11:20:56.719824"
+        },
+        {
+            "id": 8,
+            "user_id": 1,
+            "username": "B_O_1",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.5962918400764465,
+            "training_round": 3,
+            "created_at": "2026-09-12T11:39:40.976016"
+        },
+        {
+            "id": 9,
+            "user_id": 2,
+            "username": "B_O_2",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.5962918400764465,
+            "training_round": 4,
+            "created_at": "2026-09-12T11:39:49.923606"
+        },
+        {
+            "id": 10,
+            "user_id": 2,
+            "username": "B_O_2",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 68.75,
+            "loss": 0.6416171789169312,
+            "training_round": 1,
+            "created_at": "2026-09-12T12:08:00.292503"
+        },
+        {
+            "id": 11,
+            "user_id": 1,
+            "username": "B_O_1",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 68.75,
+            "loss": 0.6416171789169312,
+            "training_round": 2,
+            "created_at": "2026-09-12T12:08:10.525520"
+        }
+    ],
+    "federated_rounds": [
+        {
+            "id": 1,
+            "round_number": 1,
+            "num_participants": 1,
+            "avg_accuracy": 75.0,
+            "avg_loss": 0.47409647703170776,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T01:12:59.071982"
+        },
+        {
+            "id": 2,
+            "round_number": 1,
+            "num_participants": 1,
+            "avg_accuracy": 75.0,
+            "avg_loss": 0.5846120715141296,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T01:27:48.887578"
+        },
+        {
+            "id": 3,
+            "round_number": 2,
+            "num_participants": 1,
+            "avg_accuracy": 68.75,
+            "avg_loss": 0.6140862107276917,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T01:29:56.444327"
+        },
+        {
+            "id": 4,
+            "round_number": 1,
+            "num_participants": 1,
+            "avg_accuracy": 81.25,
+            "avg_loss": 0.6033291816711426,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T10:54:05.852722"
+        },
+        {
+            "id": 5,
+            "round_number": 2,
+            "num_participants": 1,
+            "avg_accuracy": 81.25,
+            "avg_loss": 0.6033291816711426,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T10:54:15.432780"
+        },
+        {
+            "id": 6,
+            "round_number": 1,
+            "num_participants": 1,
+            "avg_accuracy": 62.5,
+            "avg_loss": 0.6199572682380676,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T11:20:54.619868"
+        },
+        {
+            "id": 7,
+            "round_number": 2,
+            "num_participants": 1,
+            "avg_accuracy": 62.5,
+            "avg_loss": 0.6199572682380676,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T11:20:56.747766"
+        },
+        {
+            "id": 8,
+            "round_number": 3,
+            "num_participants": 1,
+            "avg_accuracy": 81.25,
+            "avg_loss": 0.5962918400764465,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T11:39:40.996781"
+        },
+        {
+            "id": 9,
+            "round_number": 4,
+            "num_participants": 1,
+            "avg_accuracy": 81.25,
+            "avg_loss": 0.5962918400764465,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T11:39:49.941093"
+        },
+        {
+            "id": 10,
+            "round_number": 1,
+            "num_participants": 1,
+            "avg_accuracy": 68.75,
+            "avg_loss": 0.6416171789169312,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T12:08:00.297457"
+        },
+        {
+            "id": 11,
+            "round_number": 2,
+            "num_participants": 1,
+            "avg_accuracy": 68.75,
+            "avg_loss": 0.6416171789169312,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-09-12T12:08:10.535661"
+        }
+    ],
+    "next_user_id": 3,
+    "next_session_id": 12,
+    "next_round_id": 12
+}

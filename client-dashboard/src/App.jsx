@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { 
   Shield, Server, Database, Play, Upload, CheckCircle2, 
@@ -38,6 +38,7 @@ function App() {
   
   // Auth Form State
   const [usernameInput, setUsernameInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [nodeNameInput, setNodeNameInput] = useState('Bank-Branch-Alpha');
   const [authMode, setAuthMode] = useState('login');
@@ -64,9 +65,15 @@ function App() {
   const [evaluatingGlobal, setEvaluatingGlobal] = useState(false);
   const [globalEvalResult, setGlobalEvalResult] = useState(null);
 
+  // Process Logs
+  const [clientLogs, setClientLogs] = useState([]);
+  const clientLogRef = useRef(null);
+  const clientLogScrolledUp = useRef(false);
+
   useEffect(() => {
     fetchClientStatus();
-    const interval = setInterval(fetchClientStatus, 4000);
+    fetchClientLogs();
+    const interval = setInterval(() => { fetchClientStatus(); fetchClientLogs(); }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -82,26 +89,40 @@ function App() {
     }
   };
 
+  const fetchClientLogs = async () => {
+    try {
+      const { data } = await axios.get(`${DEFAULT_CLIENT_API}/logs`);
+      setClientLogs(data.logs || []);
+      // Auto-scroll only if user is near the bottom
+      const el = clientLogRef.current;
+      if (el && !clientLogScrolledUp.current) {
+        const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        if (isNearBottom) el.scrollTop = el.scrollHeight;
+      }
+    } catch (err) { /* logs endpoint may not exist yet */ }
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
     try {
       const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
-      const payload = authMode === 'login' 
-        ? { username: usernameInput, password: passwordInput }
-        : { username: usernameInput, password: passwordInput, node_name: nodeNameInput };
-      
-      const { data } = await axios.post(`${DEFAULT_CLIENT_API}${endpoint}`, payload);
-      
+      // Auth always goes to the AGGREGATOR server (serverUrl), not the client node
+      const payload = authMode === 'login'
+        ? { email: emailInput, password: passwordInput }
+        : { username: usernameInput, email: emailInput, password: passwordInput };
+
+      const { data } = await axios.post(`${serverUrl}${endpoint}`, payload);
+
       if (data.token) {
         localStorage.setItem('fedvault_token', data.token);
-        localStorage.setItem('fedvault_user', JSON.stringify({ username: usernameInput, node_name: data.node_name || nodeNameInput }));
+        localStorage.setItem('fedvault_user', JSON.stringify(data.user));
         localStorage.setItem('fedvault_server', serverUrl);
         setToken(data.token);
-        setUser({ username: usernameInput, node_name: data.node_name || nodeNameInput });
+        setUser(data.user);
       }
     } catch (err) {
-      setAuthError(err.response?.data?.detail || 'Authentication failed. Please verify credentials.');
+      setAuthError(err.response?.data?.detail || 'Authentication failed. Check server URL and credentials.');
     }
   };
 
@@ -149,12 +170,13 @@ function App() {
     setSendingWeights(true);
     try {
       const { data } = await axios.post(`${DEFAULT_CLIENT_API}/train/send-weights`, {
-        server_url: serverUrl
+        server_url: serverUrl,
+        token: token,   // JWT token needed by aggregator to accept the update
       });
       setTransmissionSuccess(true);
       setActiveStep(5);
     } catch (err) {
-      alert('Transmission failed. Ensure Central Aggregator Server is running.');
+      alert('Transmission failed. Ensure Central Aggregator Server is running and you are logged in.');
     } finally {
       setSendingWeights(false);
     }
@@ -164,15 +186,17 @@ function App() {
     setEvaluatingGlobal(true);
     try {
       const { data } = await axios.post(`${DEFAULT_CLIENT_API}/validate/global`, {
-        server_url: serverUrl
+        server_url: serverUrl,
+        token: token,   // JWT token needed to fetch global model from aggregator
       });
       setGlobalEvalResult(data);
     } catch (err) {
-      alert('Global validation failed');
+      alert('Global validation failed. Ensure a FL round has completed on the server.');
     } finally {
       setEvaluatingGlobal(false);
     }
   };
+
 
   // Auth Screen if not logged in
   if (!token) {
@@ -226,6 +250,21 @@ function App() {
                   onChange={(e) => setUsernameInput(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
                   placeholder="bank_operator_01"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-mono text-slate-400">Email</label>
+              <div className="relative">
+                <Key size={16} className="absolute left-3 top-3 text-slate-500" />
+                <input 
+                  type="email"
+                  required
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
+                  placeholder="operator@bankbranch.com"
                 />
               </div>
             </div>
@@ -588,6 +627,100 @@ function App() {
             )}
           </div>
         )}
+
+        {/* ── FL Process Log Console ── */}
+        <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Terminal size={18} className="text-cyan-400" /> Node Process Log
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Live trace of every FL step on this node: dataset loading, local training, weight transmission, and global model receipt.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-1 text-[11px] font-mono bg-slate-900 border border-slate-800 text-cyan-400 rounded-lg">
+                {clientLogs.length} events
+              </span>
+              <button
+                onClick={() => {
+                  if (clientLogRef.current) {
+                    clientLogRef.current.scrollTop = clientLogRef.current.scrollHeight;
+                    clientLogScrolledUp.current = false;
+                  }
+                }}
+                className="px-3 py-1.5 text-xs font-semibold text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-lg transition-all"
+              >
+                Jump to Latest
+              </button>
+            </div>
+          </div>
+
+          {/* Color legend */}
+          <div className="flex flex-wrap gap-3 text-[10px] font-mono">
+            {[
+              { tag: '[TRAIN]', color: 'text-violet-400', dot: 'bg-violet-400', label: 'Training' },
+              { tag: '[TX]',    color: 'text-cyan-400',   dot: 'bg-cyan-400',   label: 'Weight transmission' },
+              { tag: '[GLOBAL]',color: 'text-emerald-400',dot: 'bg-emerald-400',label: 'Global model' },
+              { tag: '[INFO]',  color: 'text-slate-400',  dot: 'bg-slate-400',  label: 'Info' },
+              { tag: '[ERROR]', color: 'text-rose-400',   dot: 'bg-rose-400',   label: 'Error' },
+            ].map(({ tag, color, dot, label }) => (
+              <span key={tag} className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${dot} inline-block`}></span>
+                <span className={color}>{tag}</span>
+                <span className="text-slate-600">{label}</span>
+              </span>
+            ))}
+          </div>
+
+          <div
+            ref={clientLogRef}
+            onScroll={() => {
+              const el = clientLogRef.current;
+              if (!el) return;
+              clientLogScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 80;
+            }}
+            className="bg-[#05070d] p-4 rounded-xl border border-slate-800 font-mono text-xs h-80 overflow-y-auto space-y-0.5 leading-relaxed"
+          >
+            {clientLogs.length === 0 ? (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-slate-600 text-center">
+                  No logs yet. Load a dataset and run local training to see the FL process traced here.
+                </p>
+              </div>
+            ) : (
+              clientLogs.map((log, i) => {
+                const tsMatch = log.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
+                const ts  = tsMatch ? tsMatch[1] : null;
+                const msg = tsMatch ? log.slice(tsMatch[0].length) : log;
+
+                const isTrainStart = msg.includes('========== LOCAL TRAINING START');
+                const isTrainEnd   = msg.includes('========== TRAINING COMPLETE');
+                const isTxStart    = msg.includes('========== TRANSMITTING WEIGHTS');
+                const isTxEnd      = msg.includes('========== TRANSMISSION COMPLETE');
+                const isSep = isTrainStart || isTrainEnd || isTxStart || isTxEnd;
+
+                let color = 'text-slate-400';
+                if (msg.startsWith('[TRAIN]')) color = msg.includes('=====') ? 'text-violet-300 font-bold' : msg.includes('[TRAIN]   ') ? 'text-slate-300' : 'text-violet-400';
+                if (msg.startsWith('[TX]'))    color = msg.includes('=====') ? 'text-cyan-300 font-bold'   : msg.includes('[TX]   ')    ? 'text-slate-300' : 'text-cyan-400';
+                if (msg.startsWith('[GLOBAL]'))color = 'text-emerald-400';
+                if (msg.startsWith('[ERROR]')) color = 'text-rose-400';
+
+                return (
+                  <div key={i}>
+                    {(isTrainStart || isTxStart) && <div className="my-1.5 border-t border-slate-700/50 border-dashed" />}
+                    <div className={`flex gap-3 hover:bg-slate-900/40 px-1.5 py-0.5 rounded ${isSep && (isTrainEnd || isTxEnd) ? 'mb-1.5' : ''}`}>
+                      <span className="text-slate-600 select-none shrink-0 w-[58px]">{ts || ''}</span>
+                      <span className={color}>{msg}</span>
+                    </div>
+                    {(isTrainEnd || isTxEnd) && <div className="my-1.5 border-t border-slate-700/50 border-dashed" />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       </main>
     </div>
   );

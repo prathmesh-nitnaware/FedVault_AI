@@ -8,8 +8,8 @@ FedVault AI Central Aggregation Server
 import torch
 import numpy as np
 from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Optional
 import io
@@ -200,9 +200,12 @@ def add_log(msg: str):
 async def startup_event():
     try:
         init_db()
-        add_log("✅ Server started with persistent database.")
+        add_log("[INFO] FedVault AI Aggregation Server initialized.")
+        add_log("[INFO] Persistent database loaded. Waiting for bank node connections...")
+        add_log("[INFO] Federated Averaging (FedAvg) engine ready. Algorithm: Sample-Weighted Averaging.")
+        add_log("[INFO] Endpoint /submit-update open for model weight submissions from bank nodes.")
     except Exception as e:
-        add_log(f"⚠️ Database connection failed: {str(e)}. Running in memory-only mode.")
+        add_log(f"[ERROR] Database connection failed: {str(e)}. Running in memory-only mode.")
     asyncio.create_task(heartbeat_monitor())
 
 async def heartbeat_monitor():
@@ -210,19 +213,20 @@ async def heartbeat_monitor():
     while True:
         await asyncio.sleep(5)
         current_time = time.time()
-        
+
         # Update online user count
         for uid in list(online_users.keys()):
             if current_time - online_users[uid] > 60:
                 del online_users[uid]
                 if uid in connected_users:
-                    connected_users[uid]["status"] = "🔴 Offline"
-        
+                    connected_users[uid]["status"] = "Offline"
+                    add_log(f"[INFO] Bank node '{connected_users[uid].get('username', uid)}' went offline (heartbeat timeout).")
+
         system_status["online_users_count"] = len(online_users)
-        
+
         # Partial aggregation trigger
         if len(client_updates) > 0 and (current_time - getattr(heartbeat_monitor, 'last_update_time', current_time)) > TIMEOUT_SECONDS:
-            add_log(f"⚠️ Timeout reached. Proceeding with partial aggregation ({len(client_updates)} clients).")
+            add_log(f"[WARN] Aggregation timeout reached. Proceeding with partial aggregation ({len(client_updates)} client(s) submitted).")
             execute_federated_aggregation()
 
 heartbeat_monitor.last_update_time = time.time()
@@ -343,16 +347,27 @@ async def heartbeat(request: Request):
     except:
         pass
     
-    online_users[uid] = time.time()
+    online_users[uid] = current_time
     connected_users[uid] = {
         "username": username,
-        "status": f"🟢 {client_status}",
+        "status": f"Online ({client_status})",
         "last_seen": datetime.now().strftime("%H:%M:%S"),
     }
     system_status["connected_clients"] = connected_users
     system_status["online_users_count"] = len(online_users)
-    
+
     return {"status": "ok"}
+
+# ── Admin / Dashboard Endpoints ───────────────────────────────────────────────
+@app.get("/admin/sessions")
+def get_sessions():
+    """Return recent FL training sessions for the server dashboard."""
+    return {"sessions": get_recent_sessions(limit=50)}
+
+@app.get("/admin/nodes")
+def get_nodes():
+    """Return all currently connected + historically seen bank nodes."""
+    return {"nodes": connected_users, "online_count": len(online_users)}
 
 # ── Server Status Endpoint ────────────────────────────────────────────────────
 @app.get("/status")
@@ -412,6 +427,18 @@ async def submit_model_update(request: Request):
     for key, val in weights_serialized.items():
         weight_tensors[key] = torch.tensor(val, dtype=torch.float32)
     
+    # Log incoming update with full detail
+    total_params = sum(len(v) if isinstance(v, list) else v.numel() if hasattr(v, 'numel') else 0
+                       for v in weight_tensors.values())
+    layer_summary = ", ".join(f"{k}: {list(v.shape)}" for k, v in list(weight_tensors.items())[:4])
+    add_log(f"[FL] Weight update received from node '{username}' (user_id={uid}).")
+    add_log(f"[FL]   Dataset  : {dataset_name}")
+    add_log(f"[FL]   Samples  : {num_samples} training records")
+    add_log(f"[FL]   Features : {input_features} input features, {num_classes} output class(es)")
+    add_log(f"[FL]   Accuracy : {accuracy:.2f}%  |  Loss: {loss:.4f}")
+    add_log(f"[FL]   Layers   : {len(weight_tensors)} parameter tensors  (e.g. {layer_summary}{'...' if len(weight_tensors) > 4 else ''})")
+    add_log(f"[FL]   Updates pending aggregation: {len(client_updates)} (including this one)")
+
     client_updates.append({
         "user_id": uid,
         "username": username,
@@ -419,7 +446,7 @@ async def submit_model_update(request: Request):
         "accuracy": accuracy,
         "loss": loss,
     })
-    
+
     client_metrics.append({
         "user_id": uid,
         "username": username,
@@ -430,15 +457,19 @@ async def submit_model_update(request: Request):
         "input_features": input_features,
         "num_classes": num_classes,
     })
-    
-    # Update connected client info
+
+    # Update connected client info with full contribution data
     connected_users[uid] = {
         "username": username,
-        "status": f"🟢 Trained (Acc: {accuracy:.1f}%)",
+        "status": f"Trained (Acc: {accuracy:.1f}%)",
         "last_seen": datetime.now().strftime("%H:%M:%S"),
+        "accuracy": round(accuracy, 2),
+        "loss": round(loss, 4),
+        "num_samples": num_samples,
+        "dataset_name": dataset_name,
     }
     system_status["connected_clients"] = connected_users
-    
+
     # Save to DB
     try:
         save_training_session(
@@ -451,91 +482,90 @@ async def submit_model_update(request: Request):
             training_round=system_status["round"] + 1
         )
     except Exception as e:
-        add_log(f"⚠️ Failed to save session to DB: {str(e)}")
-    
-    add_log(f"📦 Update received from {username} | Accuracy: {accuracy:.2f}% | Loss: {loss:.4f} | Dataset: {dataset_name}")
-    
+        add_log(f"[WARN] Failed to save session to DB: {str(e)}")
+
     heartbeat_monitor.last_update_time = time.time()
-    
+
     # Check if we should aggregate
     num_updates = len(client_updates)
-    
+
     if num_updates == 1:
-        # Single client: use their model directly
-        add_log(f"⚡ Single client update from {username}. Model stored as global model.")
+        add_log(f"[FL] Only 1 node has submitted so far. Storing weights as current global model.")
+        add_log(f"[FL] Waiting for additional nodes, or aggregation will auto-trigger after {TIMEOUT_SECONDS}s timeout.")
         execute_federated_aggregation()
     elif num_updates >= 2:
-        # Multiple clients: trigger FedAvg
-        add_log(f"🔄 {num_updates} client updates received. Triggering Federated Averaging...")
+        add_log(f"[FL] {num_updates} nodes have submitted updates. Triggering FedAvg aggregation now.")
         execute_federated_aggregation()
     else:
         system_status["status"] = f"Waiting for more clients... ({num_updates} received)"
-    
+
     return {
         "message": "Update accepted",
         "current_updates": num_updates,
         "round": system_status["round"]
     }
 
-# ── Federated Averaging Aggregation ───────────────────────────────────────────
+# -- Federated Averaging Aggregation ------------------------------------------
 def execute_federated_aggregation():
     """
-    Sample-Weighted FedAvg: Aggregate model weights from all participating bank nodes
+    Sample-Weighted FedAvg: aggregate model weights from all participating nodes
     weighted by their local sample count (n_i / N_total).
-    
-    FL Accuracy Calculation:
-    Global FL Accuracy is calculated as the sample-weighted average accuracy across all 
-    participating bank client datasets: FL_Accuracy = sum(n_i * Accuracy_i) / sum(n_i)
     """
     global global_model_weights, client_updates, client_metrics
-    
+
     if len(client_updates) == 0:
         return
-    
+
     num_clients = len(client_updates)
     round_num = system_status["round"] + 1
-    
-    add_log(f"═══ BANKING FL ROUND {round_num} AGGREGATION ═══")
-    add_log(f"Participating Bank Nodes: {num_clients}")
-    
-    # Calculate sample counts and weights for FL calculation
+
+    add_log(f"[FL] ========== FEDERATED ROUND {round_num} START ==========")
+    add_log(f"[FL] Nodes participating this round: {num_clients}")
+
+    # Sample counts and FedAvg weights
     sample_counts = [m.get("num_samples", 1) for m in client_metrics]
     total_samples = sum(sample_counts) if sum(sample_counts) > 0 else 1
-    
-    # FL Pure Accuracy & Loss Calculation (Sample-weighted)
+
+    add_log(f"[FL] Total training samples pooled across all nodes: {total_samples}")
+    add_log(f"[FL] Per-node contribution:")
+    for m, n in zip(client_metrics, sample_counts):
+        pct = (n / total_samples) * 100
+        add_log(f"[FL]   Node '{m['username']}': {n} samples  =>  FedAvg weight={pct:.1f}%  |  local_acc={m['accuracy']:.2f}%  |  local_loss={m['loss']:.4f}")
+
+    # FL weighted accuracy and loss
     accuracies = [m["accuracy"] for m in client_metrics]
-    losses = [m["loss"] for m in client_metrics]
-    
-    weighted_accuracy = sum(acc * n for acc, n in zip(accuracies, sample_counts)) / total_samples
-    weighted_loss = sum(loss * n for loss, n in zip(losses, sample_counts)) / total_samples
-    
-    # Per-bank-client node accuracy report
-    client_acc_report = []
-    for m in client_metrics:
-        client_acc_report.append(f"{m['username']}: {m['accuracy']:.1f}% ({m.get('num_samples', 0)} samples)")
-    
+    losses     = [m["loss"]     for m in client_metrics]
+    weighted_accuracy = sum(a * n for a, n in zip(accuracies, sample_counts)) / total_samples
+    weighted_loss     = sum(l * n for l, n in zip(losses,     sample_counts)) / total_samples
+
+    add_log(f"[FL] Global accuracy = sum(n_i * acc_i) / N_total = {weighted_accuracy:.4f}%")
+    add_log(f"[FL] Global loss     = sum(n_i * loss_i) / N_total = {weighted_loss:.6f}")
+
     if num_clients == 1:
-        # Single bank node: use weights directly
-        add_log("📌 Single bank node participant — model weights stored directly as global model.")
+        add_log("[FL] Single-node round: weights stored directly as global model (no averaging needed).")
         global_model_weights = client_updates[0]["weights"]
     else:
-        # Federated Averaging (FedAvg): Weighted sum of weights by sample proportions
-        add_log(f"🤝 Executing Weighted FedAvg Aggregation across {num_clients} bank nodes (Total samples: {total_samples})...")
-        
+        add_log(f"[FL] Running sample-weighted FedAvg across {num_clients} nodes...")
         first_weights = client_updates[0]["weights"]
-        aggregated = {}
-        for key in first_weights.keys():
-            aggregated[key] = torch.zeros_like(first_weights[key], dtype=torch.float32)
-        
+        aggregated = {k: torch.zeros_like(v, dtype=torch.float32) for k, v in first_weights.items()}
+
         for update, n_samples in zip(client_updates, sample_counts):
-            weight_factor = n_samples / total_samples
-            for key in aggregated.keys():
-                aggregated[key] += update["weights"][key] * weight_factor
-        
+            w = n_samples / total_samples
+            node_name = update["username"]
+            add_log(f"[FL]   Adding node '{node_name}' weights scaled by factor {w:.4f} ({n_samples}/{total_samples} samples)")
+            for key in aggregated:
+                aggregated[key] += update["weights"][key] * w
+
         global_model_weights = aggregated
-        add_log(f"✅ Weighted FedAvg completed. Consolidated {len(aggregated)} parameter tensors across {num_clients} bank nodes.")
-    
-    # Update system status with pure Federated Accuracy
+        add_log(f"[FL] Aggregation complete: {len(aggregated)} parameter tensors averaged.")
+
+        # Show a sample of the resulting layers
+        add_log("[FL] Sample of aggregated parameter tensors (layer name | shape | mean abs value):")
+        for name, tensor in list(aggregated.items())[:6]:
+            add_log(f"[FL]   {name:45s}  shape={list(tensor.shape)}  mean_abs={tensor.abs().mean().item():.6f}")
+
+    # Update system status
+    client_acc_report = [f"{m['username']}: {m['accuracy']:.1f}% ({m.get('num_samples',0)} samples)" for m in client_metrics]
     system_status["accuracy_history"].append(weighted_accuracy)
     system_status["loss_history"].append(weighted_loss)
     system_status["client_accuracies"].append(client_acc_report)
@@ -543,19 +573,24 @@ def execute_federated_aggregation():
     system_status["round"] = round_num
     system_status["global_model_version"] = f"v{round_num}.0.0"
     system_status["last_updated"] = datetime.now().strftime("%H:%M:%S")
-    system_status["status"] = "Idle — Ready for next banking round"
-    
-    add_log(f"📊 Round {round_num} Global FL Accuracy: {weighted_accuracy:.2f}% | Global FL Loss: {weighted_loss:.4f}")
-    
+    system_status["status"] = "Idle -- Ready for next round"
+
+    add_log(f"[FL] Global model updated to version v{round_num}.0.0")
+    add_log(f"[FL] Nodes can now fetch the updated global model from GET /global-model (requires auth token).")
+    add_log(f"[FL] ========== ROUND {round_num} COMPLETE  |  accuracy={weighted_accuracy:.2f}%  |  loss={weighted_loss:.4f} ==========")
+
     # Save to DB
     try:
         save_federated_round(round_num, num_clients, weighted_accuracy, weighted_loss)
     except Exception as e:
-        add_log(f"⚠️ Failed to save round to DB: {str(e)}")
-    
-    # Clear for next round
+        add_log(f"[WARN] Failed to save round to DB: {str(e)}")
+
+    # Clear buffers for next round
     client_updates.clear()
     client_metrics.clear()
+    add_log(f"[INFO] Update buffers cleared. Ready to accept submissions for Round {round_num + 1}.")
+
+
 
 
 # ── Get Global Model (for prediction) ─────────────────────────────────────────
@@ -682,10 +717,30 @@ async def post_prediction_xai(request: Request):
     explanation = explain_prediction(model, input_tensor, feature_names)
     return {"explanation": explanation}
 
-# ── Serve React Frontend ──────────────────────────────────────────────────────────
+# ── Serve React Frontend (safe mounting — avoids POST 405 from StaticFiles) ────
 frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "server-dashboard", "dist"))
+fallback_path = os.path.dirname(os.path.abspath(__file__))
+
 if os.path.exists(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+    # Mount only the /assets sub-directory so StaticFiles never sees /auth/* etc.
+    assets_path = os.path.join(frontend_path, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    # Serve index.html for root GET request
+    @app.get("/", include_in_schema=False)
+    async def serve_root():
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+
+    # Catch-all for client-side React routes (GET only — never intercepts POST)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        # Try to serve an exact static file first (e.g. vite.svg)
+        candidate = os.path.join(frontend_path, full_path)
+        if os.path.isfile(candidate):
+            return FileResponse(candidate)
+        # Fall back to SPA index.html
+        return FileResponse(os.path.join(frontend_path, "index.html"))
 else:
-    # Fallback to local server dir if React build missing
-    app.mount("/", StaticFiles(directory=os.path.dirname(os.path.abspath(__file__)), html=True), name="frontend")
+    # Fallback to plain server dir (no React build present)
+    app.mount("/", StaticFiles(directory=fallback_path, html=True), name="frontend")

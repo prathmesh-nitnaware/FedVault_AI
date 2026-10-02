@@ -56,6 +56,7 @@ function App() {
   ];
 
   const logContainerRef = useRef(null);
+  const userScrolledUp = useRef(false);  // true when user has scrolled up manually
 
   useEffect(() => {
     fetchStatus();
@@ -65,8 +66,13 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    const el = logContainerRef.current;
+    if (!el) return;
+    // Only auto-scroll if user is already at the bottom (within 80px)
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight;
+      userScrolledUp.current = false;
     }
   }, [status?.logs]);
 
@@ -207,11 +213,18 @@ function App() {
     }
   };
 
-  const mockNodes = [
-    { name: 'Node-Alpha (Chase Branch #102)', samples: 4500, weight: '45.0%', status: 'Online', accuracy: '94.2%', latency: '12ms' },
-    { name: 'Node-Beta (Wells Branch #409)', samples: 3200, weight: '32.0%', status: 'Online', accuracy: '91.8%', latency: '18ms' },
-    { name: 'Node-Gamma (Citi Node #881)', samples: 2300, weight: '23.0%', status: 'Online', accuracy: '93.5%', latency: '14ms' },
-  ];
+  // Derive live nodes from server status (replaces old hardcoded mockNodes)
+  const liveNodes = Object.entries(status.connected_clients || {}).map(([uid, info]) => ({
+    id: uid,
+    name: info.username || `Node-${uid}`,
+    status: info.status || '🔴 Offline',
+    last_seen: info.last_seen || '--',
+    accuracy: info.accuracy != null ? `${Number(info.accuracy).toFixed(1)}%` : '--',
+    loss: info.loss != null ? Number(info.loss).toFixed(4) : '--',
+    num_samples: info.num_samples || 0,
+    dataset_name: info.dataset_name || 'N/A',
+  }));
+  const totalSamples = liveNodes.reduce((s, n) => s + n.num_samples, 0);
 
   return (
     <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
@@ -335,7 +348,9 @@ function App() {
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Global Model Accuracy</p>
                   <h3 className="text-2xl font-black mt-2 text-white font-mono">
-                    {status.latest_accuracy !== undefined ? `${status.latest_accuracy}%` : '89.4%'}
+                    {status.accuracy_history && status.accuracy_history.length > 0
+                      ? `${Number(status.accuracy_history[status.accuracy_history.length - 1]).toFixed(1)}%`
+                      : <span className="text-slate-500 text-base font-normal">No rounds yet</span>}
                   </h3>
                 </div>
                 <div className="bg-cyan-500/10 p-2.5 rounded-xl text-cyan-400">
@@ -352,7 +367,7 @@ function App() {
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Connected Bank Nodes</p>
                   <h3 className="text-2xl font-black mt-2 text-white font-mono">
-                    {status.connected_users_count || 3} <span className="text-xs text-slate-400 font-sans font-normal">Active</span>
+                    {liveNodes.length} <span className="text-xs text-slate-400 font-sans font-normal">Active</span>
                   </h3>
                 </div>
                 <div className="bg-emerald-500/10 p-2.5 rounded-xl text-emerald-400">
@@ -369,7 +384,7 @@ function App() {
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aggregation Rounds</p>
                   <h3 className="text-2xl font-black mt-2 text-white font-mono">
-                    Round #{status.total_federated_rounds || status.current_round || 1}
+                    Round #{status.round || 0}
                   </h3>
                 </div>
                 <div className="bg-violet-500/10 p-2.5 rounded-xl text-violet-400">
@@ -424,91 +439,168 @@ function App() {
                 </div>
               </div>
 
-              {/* Node Summary List */}
+              {/* Node Summary List — Live from /status */}
               <div className="glass-card p-6 rounded-2xl border border-slate-800">
-                <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-                  <Layers size={18} className="text-cyan-400" /> Active Banking Node Contributions
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {mockNodes.map((node, idx) => (
-                    <div key={idx} className="bg-slate-900/70 p-4 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-200">{node.name}</span>
-                        <span className="px-2 py-0.5 text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
-                          {node.status}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-slate-950/60 p-2.5 rounded-lg">
-                        <div>
-                          <span className="text-slate-500 block text-[10px]">Samples</span>
-                          <span className="text-cyan-300">{node.samples.toLocaleString()}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block text-[10px]">FL Weight</span>
-                          <span className="text-cyan-300">{node.weight}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Layers size={18} className="text-cyan-400" /> Active Banking Node Contributions
+                  </h3>
+                  <span className="text-xs font-mono text-slate-500">{liveNodes.length} node{liveNodes.length !== 1 ? 's' : ''} tracked</span>
                 </div>
+                {liveNodes.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
+                    <div className="p-4 bg-slate-900 rounded-2xl border border-slate-800">
+                      <Users size={28} className="text-slate-600" />
+                    </div>
+                    <p className="text-sm text-slate-500 font-medium">No bank nodes connected yet</p>
+                    <p className="text-xs text-slate-600 max-w-xs">Start a client node at localhost:8001, register, load a dataset, and complete local training to appear here.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {liveNodes.map((node, idx) => {
+                    const isOnline = node.status.includes('Online') || node.status.includes('Trained');
+                      const flWeight = totalSamples > 0 ? ((node.num_samples / totalSamples) * 100).toFixed(1) : '0.0';
+                      return (
+                        <div key={node.id} className="bg-slate-900/70 p-4 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-200 truncate max-w-[120px]" title={node.name}>{node.name}</span>
+                            <span className={`px-2 py-0.5 text-[10px] font-mono rounded-full border ${
+                              isOnline ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            }`}>{isOnline ? 'Online' : 'Offline'}</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-slate-950/60 p-2.5 rounded-lg">
+                            <div>
+                              <span className="text-slate-500 block text-[10px]">Samples</span>
+                              <span className="text-cyan-300">{node.num_samples.toLocaleString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[10px]">FL Weight</span>
+                              <span className="text-cyan-300">{flWeight}%</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[10px]">Local Acc</span>
+                              <span className="text-emerald-400">{node.accuracy}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500 block text-[10px]">Last Seen</span>
+                              <span className="text-slate-400">{node.last_seen}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* TAB CONTENT: Bank Nodes */}
+          {/* TAB CONTENT: Bank Nodes — Live */}
           {activeTab === 'nodes' && (
             <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-6">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Users size={20} className="text-cyan-400" /> Connected Financial Institution Nodes
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Decentralized banking network participating in FedAvg model weight updates.
-                </p>
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Users size={20} className="text-cyan-400" /> Connected Financial Institution Nodes
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Decentralized banking network participating in FedAvg model weight updates.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/80 rounded-xl border border-slate-800 text-xs font-mono">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span className="text-slate-300">{status.online_users_count ?? 0} Online</span>
+                  <span className="text-slate-600">·</span>
+                  <span className="text-slate-400">{liveNodes.length} Total</span>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {mockNodes.map((node, i) => (
-                  <div key={i} className="glass-card p-5 rounded-2xl border border-slate-800 space-y-4 glow-cyan">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="bg-cyan-500/10 p-2 rounded-xl text-cyan-400">
-                          <Server size={20} />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-white">{node.name}</h4>
-                          <span className="text-[10px] text-slate-400 font-mono">ID: BANK_NODE_00{i+1}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 text-xs font-mono">
-                      <div className="flex justify-between py-1 border-b border-slate-800">
-                        <span className="text-slate-400">Transaction Records:</span>
-                        <span className="text-cyan-300 font-bold">{node.samples}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-slate-800">
-                        <span className="text-slate-400">FedAvg Weight:</span>
-                        <span className="text-cyan-300 font-bold">{node.weight}</span>
-                      </div>
-                      <div className="flex justify-between py-1 border-b border-slate-800">
-                        <span className="text-slate-400">Local Test Acc:</span>
-                        <span className="text-emerald-400 font-bold">{node.accuracy}</span>
-                      </div>
-                      <div className="flex justify-between py-1">
-                        <span className="text-slate-400">Network Latency:</span>
-                        <span className="text-slate-300 font-bold">{node.latency}</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-2">
-                      <span className="w-full inline-flex justify-center items-center gap-1.5 py-2 px-3 text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
-                        <CheckCircle2 size={14} /> Ready for Aggregation Round
-                      </span>
-                    </div>
+              {liveNodes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
+                  <div className="p-6 bg-slate-900/80 rounded-3xl border border-slate-800">
+                    <Server size={40} className="text-slate-600" />
                   </div>
-                ))}
-              </div>
+                  <div>
+                    <p className="text-base font-bold text-slate-400">No Bank Nodes Connected</p>
+                    <p className="text-xs text-slate-600 mt-1 max-w-sm">
+                      To see nodes here: open localhost:8001, register a bank node, load a dataset, run local training, then transmit weights.
+                    </p>
+                  </div>
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs font-mono text-slate-500 text-left w-full max-w-sm space-y-1">
+                    <p className="text-cyan-400 font-bold mb-2">Quick Start</p>
+                    <p>1. Open http://localhost:8001</p>
+                    <p>2. Register → Login</p>
+                    <p>3. Load Sample Dataset</p>
+                    <p>4. Run Local Training</p>
+                    <p>5. Transmit Encrypted Weights</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {liveNodes.map((node, i) => {
+                    const isOnline = node.status.includes('🟢');
+                    const hasTrainedModel = node.accuracy !== '--';
+                    const flWeight = totalSamples > 0 ? ((node.num_samples / totalSamples) * 100).toFixed(1) : '0.0';
+                    return (
+                      <div key={node.id} className={`glass-card p-5 rounded-2xl border space-y-4 ${
+                        isOnline ? 'border-cyan-500/30 glow-cyan' : 'border-slate-800'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`p-2 rounded-xl ${
+                              isOnline ? 'bg-cyan-500/10 text-cyan-400' : 'bg-slate-800 text-slate-500'
+                            }`}>
+                              <Server size={20} />
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-bold text-white">{node.name}</h4>
+                              <span className="text-[10px] text-slate-400 font-mono">ID: {node.id}</span>
+                            </div>
+                          </div>
+                          <span className={`px-2 py-0.5 text-[10px] font-mono rounded-full border ${
+                            isOnline ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          }`}>{isOnline ? '🟢 Online' : '🔴 Offline'}</span>
+                        </div>
+
+                        <div className="space-y-2 text-xs font-mono">
+                          <div className="flex justify-between py-1 border-b border-slate-800">
+                            <span className="text-slate-400">Dataset:</span>
+                            <span className="text-cyan-300 font-bold truncate ml-2 max-w-[130px]" title={node.dataset_name}>{node.dataset_name}</span>
+                          </div>
+                          <div className="flex justify-between py-1 border-b border-slate-800">
+                            <span className="text-slate-400">Training Records:</span>
+                            <span className="text-cyan-300 font-bold">{node.num_samples.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between py-1 border-b border-slate-800">
+                            <span className="text-slate-400">FedAvg Weight:</span>
+                            <span className="text-cyan-300 font-bold">{flWeight}%</span>
+                          </div>
+                          <div className="flex justify-between py-1 border-b border-slate-800">
+                            <span className="text-slate-400">Local Test Acc:</span>
+                            <span className={`font-bold ${hasTrainedModel ? 'text-emerald-400' : 'text-slate-500'}`}>{node.accuracy}</span>
+                          </div>
+                          <div className="flex justify-between py-1">
+                            <span className="text-slate-400">Last Seen:</span>
+                            <span className="text-slate-300 font-bold">{node.last_seen}</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-1">
+                          {hasTrainedModel ? (
+                            <span className="w-full inline-flex justify-center items-center gap-1.5 py-2 px-3 text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
+                              <CheckCircle2 size={14} /> Weights Submitted to Aggregator
+                            </span>
+                          ) : (
+                            <span className="w-full inline-flex justify-center items-center gap-1.5 py-2 px-3 text-xs font-semibold text-yellow-400 bg-yellow-500/10 rounded-xl border border-yellow-500/20">
+                              <Activity size={14} /> Awaiting Local Training
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -657,33 +749,98 @@ function App() {
           {/* TAB CONTENT: Live Server Logs */}
           {activeTab === 'logs' && (
             <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Terminal size={20} className="text-cyan-400" /> Aggregation Server Operational Console
+                    <Terminal size={20} className="text-cyan-400" /> FL Process Log Console
                   </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Real-time log telemetry from FastAPI lifecycle and FedAvg updates.</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Live feed of every FL step: node connections, weight submissions, FedAvg aggregation, and global model updates.
+                  </p>
                 </div>
-                <span className="px-2.5 py-1 text-xs font-mono bg-slate-900 border border-slate-800 text-cyan-400 rounded-lg">
-                  {status.logs ? status.logs.length : 0} Events Streamed
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 text-xs font-mono bg-slate-900 border border-slate-800 text-cyan-400 rounded-lg">
+                    {status.logs ? status.logs.length : 0} events
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (logContainerRef.current) {
+                        logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+                        userScrolledUp.current = false;
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-lg transition-all"
+                  >
+                    Jump to Latest
+                  </button>
+                  <button
+                    onClick={() => fetchStatus()}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-300 bg-slate-900/80 hover:bg-slate-800 border border-slate-800 rounded-lg transition-all"
+                  >
+                    Refresh
+                  </button>
+                </div>
               </div>
 
-              <div 
+              {/* Legend */}
+              <div className="flex flex-wrap gap-3 text-[11px] font-mono">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-cyan-400 inline-block"></span><span className="text-cyan-400">[FL]</span> <span className="text-slate-500">Federated learning steps</span></span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span><span className="text-slate-400">[INFO]</span> <span className="text-slate-500">System events</span></span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block"></span><span className="text-yellow-400">[WARN]</span> <span className="text-slate-500">Warnings</span></span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-400 inline-block"></span><span className="text-rose-400">[ERROR]</span> <span className="text-slate-500">Errors</span></span>
+              </div>
+
+              <div
                 ref={logContainerRef}
-                className="bg-[#05070d] p-4 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 h-96 overflow-y-auto space-y-2 leading-relaxed"
+                onScroll={() => {
+                  const el = logContainerRef.current;
+                  if (!el) return;
+                  // If user scrolled more than 80px from bottom, mark as reading history
+                  userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 80;
+                }}
+                className="bg-[#05070d] p-4 rounded-xl border border-slate-800 font-mono text-xs h-[520px] overflow-y-auto space-y-0.5 leading-relaxed"
               >
-                {(status.logs || ["🚀 FedVault AI Aggregation Server initialized. Waiting for banking node updates..."]).map((log, i) => (
-                  <div key={i} className="flex gap-3 hover:bg-slate-900/50 p-1 rounded">
-                    <span className="text-slate-600 select-none">[{new Date().toLocaleTimeString()}]</span>
-                    <span className={log.includes('❌') ? 'text-rose-400' : log.includes('🚀') || log.includes('✅') ? 'text-cyan-300' : 'text-slate-300'}>
-                      {log}
-                    </span>
-                  </div>
-                ))}
+                {(status.logs || ["[INFO] FedVault AI Aggregation Server initialized. Waiting for bank node connections..."]).map((log, i) => {
+                  // Extract timestamp and message from "[HH:MM:SS] text"
+                  const tsMatch = log.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
+                  const ts = tsMatch ? tsMatch[1] : null;
+                  const msg = tsMatch ? log.slice(tsMatch[0].length) : log;
+
+                  // Round separator line
+                  const isRoundStart  = msg.includes('========== FEDERATED ROUND') && msg.includes('START');
+                  const isRoundEnd    = msg.includes('========== ROUND') && msg.includes('COMPLETE');
+
+                  // Color by tag
+                  const isFL    = msg.startsWith('[FL]');
+                  const isWarn  = msg.startsWith('[WARN]');
+                  const isError = msg.startsWith('[ERROR]');
+
+                  let textColor = 'text-slate-400';
+                  if (isFL)    textColor = msg.includes('==========') ? 'text-cyan-300 font-bold' : msg.includes('[FL]   ') ? 'text-slate-300' : 'text-cyan-400';
+                  if (isWarn)  textColor = 'text-yellow-400';
+                  if (isError) textColor = 'text-rose-400';
+
+                  return (
+                    <div key={i}>
+                      {isRoundStart && (
+                        <div className="my-2 border-t border-slate-700/60 border-dashed" />
+                      )}
+                      <div className={`flex gap-3 hover:bg-slate-900/40 px-1.5 py-0.5 rounded ${isRoundEnd ? 'mb-2' : ''}`}>
+                        <span className="text-slate-600 select-none shrink-0 w-[62px]">
+                          {ts ? ts : ''}
+                        </span>
+                        <span className={textColor}>{msg}</span>
+                      </div>
+                      {isRoundEnd && (
+                        <div className="my-2 border-t border-slate-700/60 border-dashed" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
+
         </main>
       </div>
     </div>

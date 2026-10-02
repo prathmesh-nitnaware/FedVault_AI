@@ -157,6 +157,19 @@ local_feature_encoders = None
 uploaded_dataset = None  # Stores the raw DataFrame
 training_background = None # Sample of training data for SHAP/LIME
 
+# ── Client Process Log ────────────────────────────────────────────────────────
+client_logs: list = []
+
+def add_client_log(msg: str):
+    """Append a timestamped log entry visible in the client dashboard."""
+    from datetime import datetime as _dt
+    ts = _dt.now().strftime("%H:%M:%S")
+    entry = f"[{ts}] {msg}"
+    print(entry)
+    client_logs.insert(0, entry)   # newest first (same as server)
+    if len(client_logs) > 200:
+        client_logs.pop()
+
 
 # ── Dataset Upload ────────────────────────────────────────────────────────────
 @app.post("/upload-dataset")
@@ -616,19 +629,350 @@ async def evaluate_fl_model(request: Request):
         raise HTTPException(status_code=500, detail=f"FL model evaluation failed: {str(e)}")
 
 
+# ── React Dashboard Compatibility Endpoints ───────────────────────────────────
+# The React client-dashboard calls different route names than the vanilla HTML client.
+# These shims bridge the gap.
+
+@app.post("/dataset/upload")
+async def dataset_upload_compat(use_sample: str = Form(None), file: UploadFile = File(None)):
+    """
+    React dashboard compatibility: load the sample banking CSV (use_sample=true)
+    or accept a file upload.
+    """
+    global uploaded_dataset
+    if use_sample and use_sample.lower() == "true":
+        # Load bundled sample dataset
+        sample_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "sample_banking.csv"))
+        if not os.path.exists(sample_path):
+            raise HTTPException(status_code=404, detail="Sample dataset not found at data/sample_banking.csv")
+        add_client_log("[INFO] Loading sample banking dataset from local disk...")
+        df = pd.read_csv(sample_path)
+        uploaded_dataset = df
+        columns = list(df.columns)
+        client_state["status"] = "dataset_loaded"
+        client_state["message"] = f"Sample banking dataset loaded ({df.shape[0]} rows, {df.shape[1]} columns)"
+        client_state["columns"] = columns
+        client_state["dataset_info"] = {
+            "filename": "sample_banking.csv",
+            "rows": df.shape[0],
+            "columns": df.shape[1],
+            "column_names": columns,
+            "total_records": df.shape[0],
+            "total_samples": df.shape[0],
+        }
+        add_client_log(f"[INFO] Dataset loaded: sample_banking.csv")
+        add_client_log(f"[INFO]   Rows    : {df.shape[0]}")
+        add_client_log(f"[INFO]   Columns : {df.shape[1]}  ->  {', '.join(columns[:6])}{'...' if len(columns) > 6 else ''}")
+        add_client_log(f"[INFO]   Target  : '{columns[-1]}' (last column will be used as label)")
+        add_client_log("[INFO] Raw data stays local. Only model weights will leave this node.")
+        return {
+            "message": "Sample dataset loaded",
+            "filename": "sample_banking.csv",
+            "rows": df.shape[0],
+            "columns": df.shape[1],
+            "column_names": columns,
+            "total_records": df.shape[0],
+            "sample_records": df.head(5).to_dict(orient="records"),
+        }
+    elif file is not None:
+        # Delegate to the file-upload endpoint logic
+        content = await file.read()
+        fname = file.filename.lower()
+        add_client_log(f"[INFO] Receiving uploaded file: {file.filename}")
+        try:
+            if fname.endswith(".csv"):
+                df = pd.read_csv(io.BytesIO(content))
+            elif fname.endswith((".xlsx", ".xls")):
+                df = pd.read_excel(io.BytesIO(content))
+            else:
+                raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
+        uploaded_dataset = df
+        columns = list(df.columns)
+        client_state["status"] = "dataset_loaded"
+        client_state["columns"] = columns
+        client_state["dataset_info"] = {
+            "filename": file.filename, "rows": df.shape[0], "columns": df.shape[1],
+            "column_names": columns, "total_records": df.shape[0], "total_samples": df.shape[0],
+        }
+        add_client_log(f"[INFO] Dataset loaded: {file.filename}  ({df.shape[0]} rows, {df.shape[1]} columns)")
+        add_client_log(f"[INFO]   Target: '{columns[-1]}' (last column)")
+        return {
+            "message": "Dataset uploaded", "filename": file.filename,
+            "rows": df.shape[0], "columns": df.shape[1], "column_names": columns,
+            "total_records": df.shape[0], "sample_records": df.head(5).to_dict(orient="records"),
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Provide use_sample=true or upload a file.")
+
+
+@app.post("/train/local")
+async def train_local_compat(request: Request):
+    """
+    React dashboard compatibility: train the local model.
+    Auto-selects the last column as the target (common convention for banking datasets).
+    """
+    global local_model, local_scaler, local_label_encoder, local_feature_columns
+    global local_model_config, local_feature_encoders, training_background
+
+    if uploaded_dataset is None:
+        raise HTTPException(status_code=400, detail="No dataset loaded. Load a dataset first.")
+
+    body = await request.json()
+    epochs = int(body.get("epochs", 10))
+
+    df = uploaded_dataset.copy()
+    target_column = df.columns[-1]  # Last column is target by convention
+
+    add_client_log("[TRAIN] ========== LOCAL TRAINING START ==========")
+    add_client_log(f"[TRAIN] Dataset : {client_state.get('dataset_info', {}).get('filename', 'unknown')}  ({len(df)} rows)")
+    add_client_log(f"[TRAIN] Target column  : '{target_column}'")
+    add_client_log(f"[TRAIN] Feature columns: {len(df.columns) - 1}")
+    add_client_log(f"[TRAIN] Epochs requested: {epochs}  |  Optimizer: Adam  |  Loss: CrossEntropyLoss")
+    add_client_log("[TRAIN] Note: raw data never leaves this node. Only gradient weights will be shared.")
+
+    client_state["status"] = "training"
+    client_state["target_column"] = target_column
+
+    try:
+        from sklearn.preprocessing import LabelEncoder, StandardScaler
+        from sklearn.model_selection import train_test_split
+        from torch.utils.data import DataLoader, TensorDataset
+        import torch.nn as nn
+        import torch.optim as optim
+
+        feature_cols = [c for c in df.columns if c != target_column]
+        X = df[feature_cols].copy()
+        y = df[target_column].copy()
+
+        feature_encoders = {}
+        for col in X.columns:
+            if X[col].dtype == "object" or X[col].dtype.name == "category":
+                le = LabelEncoder()
+                X[col] = le.fit_transform(X[col].astype(str))
+                feature_encoders[col] = le
+
+        X = X.fillna(X.median(numeric_only=True)).fillna(0)
+        label_encoder = LabelEncoder()
+        y_encoded = label_encoder.fit_transform(y.astype(str))
+        num_classes = len(label_encoder.classes_)
+
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X.values.astype(np.float32))
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_scaled, y_encoded, test_size=0.2, random_state=42,
+            stratify=y_encoded if num_classes > 1 else None
+        )
+
+        X_train_t = torch.tensor(X_train, dtype=torch.float32)
+        y_train_t = torch.tensor(y_train, dtype=torch.long)
+        X_test_t  = torch.tensor(X_test, dtype=torch.float32)
+        y_test_t  = torch.tensor(y_test, dtype=torch.long)
+
+        train_loader = DataLoader(TensorDataset(X_train_t, y_train_t), batch_size=32, shuffle=True)
+        test_loader  = DataLoader(TensorDataset(X_test_t, y_test_t), batch_size=64)
+
+        input_features = X_train.shape[1]
+        model = GenericMLP(input_features=input_features, num_classes=num_classes)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+        add_client_log(f"[TRAIN] Model architecture: MLP  |  input={input_features}  ->  hidden=[128,64]  ->  output={num_classes}")
+        total_params = sum(p.numel() for p in model.parameters())
+        add_client_log(f"[TRAIN] Total trainable parameters: {total_params:,}")
+        add_client_log(f"[TRAIN] Train split: {len(X_train)} samples  |  Test split: {len(X_test)} samples")
+
+        model.train()
+        for epoch in range(epochs):
+            epoch_loss = 0.0
+            batches = 0
+            for batch_X, batch_y in train_loader:
+                optimizer.zero_grad()
+                out = model(batch_X)
+                loss = criterion(out, batch_y)
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+                batches += 1
+            avg_epoch_loss = epoch_loss / batches if batches > 0 else 0
+            client_state["training_progress"] = int(((epoch + 1) / epochs) * 100)
+            add_client_log(f"[TRAIN]   Epoch {epoch+1:>2}/{epochs}  avg_loss={avg_epoch_loss:.4f}")
+
+        model.eval()
+        correct = total = total_loss = 0
+        with torch.no_grad():
+            for batch_X, batch_y in test_loader:
+                out = model(batch_X)
+                total_loss += criterion(out, batch_y).item() * batch_X.size(0)
+                _, predicted = torch.max(out, 1)
+                total += batch_y.size(0)
+                correct += (predicted == batch_y).sum().item()
+
+        accuracy = (correct / total) * 100 if total > 0 else 0
+        final_loss = total_loss / total if total > 0 else 0
+
+        local_model = model
+        local_scaler = scaler
+        local_label_encoder = label_encoder
+        local_feature_columns = feature_cols
+        local_model_config = {"input_features": input_features, "num_classes": num_classes}
+        local_feature_encoders = feature_encoders
+        training_background = X_train
+
+        client_state["accuracy"] = accuracy
+        client_state["loss"] = final_loss
+        client_state["status"] = "success"
+        client_state["model_ready"] = True
+        client_state["message"] = f"Training complete! Accuracy: {accuracy:.2f}%"
+
+        add_client_log(f"[TRAIN] ========== TRAINING COMPLETE ==========")
+        add_client_log(f"[TRAIN] Local test accuracy : {accuracy:.2f}%")
+        add_client_log(f"[TRAIN] Local test loss     : {final_loss:.4f}")
+        add_client_log("[TRAIN] Model is ready. You can now transmit encrypted weights to the aggregation server.")
+
+        return {
+            "accuracy": f"{accuracy:.2f}%",
+            "loss": round(final_loss, 4),
+            "samples": len(df),
+            "input_features": input_features,
+            "num_classes": num_classes,
+            "target_column": target_column,
+        }
+    except Exception as e:
+        client_state["status"] = "error"
+        client_state["message"] = f"Training failed: {str(e)}"
+        add_client_log(f"[ERROR] Training failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/train/send-weights")
+async def send_weights_compat(request: Request):
+    """
+    React dashboard compatibility: send trained model weights to the aggregator server.
+    Body: { server_url, token }
+    """
+    if local_model is None or local_model_config is None:
+        raise HTTPException(status_code=400, detail="No trained model available. Run /train/local first.")
+
+    body = await request.json()
+    server_url = body.get("server_url", "http://localhost:8000")
+    token = body.get("token", "")
+
+    # Serialize weights
+    model_weights = {k: v.tolist() for k, v in local_model.state_dict().items()}
+    total_params = sum(t.numel() for t in local_model.state_dict().values())
+
+    add_client_log("[TX] ========== TRANSMITTING WEIGHTS TO SERVER ==========")
+    add_client_log(f"[TX] Target aggregator: {server_url}/submit-update")
+    add_client_log(f"[TX] Serializing {len(model_weights)} parameter tensors ({total_params:,} total values)...")
+    for name, tensor in list(local_model.state_dict().items())[:6]:
+        add_client_log(f"[TX]   Layer '{name}': shape={list(tensor.shape)}  mean_abs={tensor.abs().mean().item():.6f}")
+    add_client_log(f"[TX] Payload: accuracy={client_state.get('accuracy', 0):.2f}%  loss={client_state.get('loss', 0):.4f}  samples={uploaded_dataset.shape[0] if uploaded_dataset is not None else 0}")
+    add_client_log("[TX] Sending POST /submit-update with Bearer token...")
+
+    try:
+        resp = requests.post(
+            f"{server_url}/submit-update",
+            json={
+                "model_weights": model_weights,
+                "accuracy": client_state.get("accuracy", 0),
+                "loss": client_state.get("loss", 0),
+                "input_features": local_model_config["input_features"],
+                "num_classes": local_model_config["num_classes"],
+                "dataset_name": client_state.get("dataset_info", {}).get("filename", "unknown") if client_state.get("dataset_info") else "unknown",
+                "num_samples": uploaded_dataset.shape[0] if uploaded_dataset is not None else 0,
+            },
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            rdata = resp.json()
+            add_client_log(f"[TX] Server accepted weights. HTTP 200 OK.")
+            add_client_log(f"[TX] Server response: round={rdata.get('round', '?')}  pending_updates={rdata.get('current_updates', '?')}")
+            add_client_log("[TX] ========== TRANSMISSION COMPLETE ==========")
+            return {"message": "Weights transmitted successfully", "round": rdata.get("round", 0)}
+        else:
+            add_client_log(f"[ERROR] Server rejected weights: HTTP {resp.status_code}  ->  {resp.text[:200]}")
+            raise HTTPException(status_code=resp.status_code, detail=resp.json().get("detail", "Server rejected update"))
+    except requests.exceptions.ConnectionError:
+        add_client_log(f"[ERROR] Cannot reach aggregator at {server_url}. Is the server running?")
+        raise HTTPException(status_code=503, detail="Cannot reach aggregator server. Is it running?")
+
+
+@app.post("/validate/global")
+async def validate_global_compat(request: Request):
+    """React dashboard compatibility: alias for /evaluate-fl-model."""
+    body = await request.json()
+    server_url = body.get("server_url", "http://localhost:8000")
+    add_client_log("[GLOBAL] Fetching global model from aggregator server...")
+    add_client_log(f"[GLOBAL] GET {server_url}/global-model")
+    result = await evaluate_fl_model(request)
+    add_client_log(f"[GLOBAL] Global model received and evaluated locally.")
+    if isinstance(result, dict):
+        acc = result.get('accuracy') or result.get('global_accuracy')
+        loss = result.get('loss') or result.get('global_loss')
+        layers = result.get('layers') or result.get('num_layers')
+        if acc: add_client_log(f"[GLOBAL]   Global model accuracy on local test data: {acc}")
+        if loss: add_client_log(f"[GLOBAL]   Global model loss: {loss}")
+        if layers: add_client_log(f"[GLOBAL]   Model parameter layers received: {layers}")
+    add_client_log("[GLOBAL] This global model was aggregated from all participating bank nodes via FedAvg.")
+    return result
+
+
+# ── Client Logs Endpoint ───────────────────────────────────────────────────────
+@app.get("/logs")
+def get_client_logs():
+    """Return the client-side FL process log for display in the dashboard."""
+    return {"logs": client_logs}
+
 # ── Client Status ─────────────────────────────────────────────────────────────
 @app.get("/status")
 def get_client_status():
     return client_state
 
 
-# ── Serve React Frontend ──────────────────────────────────────────────────────────
+
+# ── Serve React Frontend (safe mounting — avoids POST 405 from StaticFiles) ────
 frontend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "client-dashboard", "dist"))
+fallback_path = os.path.dirname(os.path.abspath(__file__))
+
 if os.path.exists(frontend_path):
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+    # Mount only the /assets sub-directory so StaticFiles never intercepts POST routes
+    assets_path = os.path.join(frontend_path, "assets")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+    # Serve index.html for root GET — GET only, never blocks POST
+    @app.get("/", include_in_schema=False)
+    async def serve_root():
+        from fastapi.responses import FileResponse
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+
+    # Catch-all for client-side React routes (GET only)
+    # IMPORTANT: Skip paths that match API endpoints so they are not swallowed by this handler
+    API_PREFIXES = {
+        "status", "logs", "predict", "train", "upload-dataset", "dataset",
+        "evaluate", "auth", "heartbeat", "global-model", "xai", "validate",
+    }
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        from fastapi.responses import FileResponse, JSONResponse
+        # If this looks like an API call, don't serve the SPA — return 404
+        top = full_path.split("/")[0].lower()
+        if top in API_PREFIXES:
+            return JSONResponse({"detail": f"Not found: /{full_path}"}, status_code=404)
+        # Serve the actual file if it exists (e.g., /assets/...)
+        candidate = os.path.join(frontend_path, full_path)
+        if os.path.isfile(candidate):
+            return FileResponse(candidate)
+        # Otherwise serve React index.html for client-side routing
+        return FileResponse(os.path.join(frontend_path, "index.html"))
 else:
-    # Fallback to local client dir if React build missing
-    app.mount("/", StaticFiles(directory=os.path.dirname(os.path.abspath(__file__)), html=True), name="frontend")
+    # Fallback to plain client dir (no React build present)
+    app.mount("/", StaticFiles(directory=fallback_path, html=True), name="frontend")
 
 if __name__ == "__main__":
     print("🏦 FedVault AI Bank Client Node starting...")
