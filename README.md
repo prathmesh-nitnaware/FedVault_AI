@@ -330,7 +330,7 @@ python scripts/attack_simulation.py
 
 ## 👥 Authors & Contributors
 
-- **Prathmesh Nitnaware** - [@prathmesh-nitnaware](https://github.com/prathmesh-nitnaware) *(Lead Developer)*
-- **Yash Kasle** - [@BuildnByte](https://github.com/BuildnByte) *(Core Contributor)*
+- **Prathmesh Nitnaware** - [@prathmesh-nitnaware](https://github.com/prathmesh-nitnaware)
+- **Yash Kasle** - [@BuildnByte](https://github.com/BuildnByte)
 
 **Domain**: Privacy-Preserving Machine Learning (PPML), Banking Systems Governance, Federated Learning & Explainable AI (XAI).
