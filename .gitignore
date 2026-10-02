@@ -1,5 +1,94 @@
-client-dashboard/node_modules
-client/__pycache__
-core/__pycache__
-server/__pycache__
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+client/__pycache__/
+core/__pycache__/
+server/__pycache__/
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments & Virtual Envs
+.env
+.env.*
+!.env.example
 .venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Node & Frontend Dashboards
+node_modules/
+client-dashboard/node_modules/
+server-dashboard/node_modules/
+client-dashboard/dist/
+server-dashboard/dist/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# PyTorch / ML checkpoints & model weights
+*.pt
+*.pth
+*.onnx
+*.bin
+checkpoints/
+
+# Logs & Databases
+logs/
+*.log
+*.sqlite
+*.sqlite3
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
