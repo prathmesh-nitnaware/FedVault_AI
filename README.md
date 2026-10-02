@@ -104,7 +104,7 @@ $$W^{t+1} = \sum_{k=1}^K \frac{n_k}{N} W_k^{t+1}$$
 
 To prevent over-weighting smaller institutions with artificially inflated local metrics, the system calculates true weighted federated accuracy:
 
-$$\text{FL\_Accuracy} = \frac{\sum_{k=1}^K n_k \cdot \text{Accuracy}_k}{\sum_{k=1}^K n_k}$$
+$$\text{Accuracy}_{\text{global}} = \frac{\sum_{k=1}^K n_k \cdot \text{Accuracy}_k}{\sum_{k=1}^K n_k}$$
 
 ### 3. Local Sensitivity & Saliency (XAI)
 
@@ -308,7 +308,7 @@ python scripts/attack_simulation.py
 ```
 
 ### What this script tests:
-1. **Unencrypted Channel**: An adversary intercepts raw PyTorch gradients and runs continuous gradient optimization $\min \|\nabla W_{dummy} - \nabla W_{real}\|^2$ to iteratively reconstruct the customer's private financial data.
+1. **Unencrypted Channel**: An adversary intercepts raw PyTorch gradients and runs continuous gradient optimization $\min \|\nabla W_{\text{dummy}} - \nabla W_{\text{real}}\|^2$ to iteratively reconstruct the customer's private financial data.
 2. **Encrypted Channel (CKKS)**: The same payload is encrypted into a TenSEAL CKKS ciphertext vector. The adversary cannot formulate gradient graphs without the private key, ensuring zero data leakage.
 
 ---
