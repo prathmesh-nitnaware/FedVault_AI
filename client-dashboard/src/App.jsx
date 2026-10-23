@@ -3,7 +3,8 @@ import axios from 'axios';
 import { 
   Shield, Server, Database, Play, Upload, CheckCircle2, 
   Activity, BarChart3, Lock, Cpu, RefreshCw, Key, User, 
-  FileText, ArrowRight, Layers, AlertCircle, Sparkles, Terminal, ChevronRight, Zap
+  FileText, ArrowRight, Layers, AlertCircle, Sparkles, Terminal, ChevronRight, Zap,
+  ShieldCheck, Building2, Award
 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
@@ -138,13 +139,12 @@ function App() {
     try {
       const { data } = await axios.get(`${DEFAULT_CLIENT_API}/logs`);
       setClientLogs(data.logs || []);
-      // Auto-scroll only if user is near the bottom
       const el = clientLogRef.current;
       if (el && !clientLogScrolledUp.current) {
         const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         if (isNearBottom) el.scrollTop = el.scrollHeight;
       }
-    } catch (err) { /* logs endpoint may not exist yet */ }
+    } catch (err) {}
   };
 
   const handleAuth = async (e) => {
@@ -170,7 +170,7 @@ function App() {
       if (err.response?.data?.detail) {
         setAuthError(err.response.data.detail);
       } else if (err.code === 'ERR_NETWORK' || !err.response) {
-        setAuthError(`Cannot connect to Aggregator Hub at "${serverUrl}". Verify the central server is running and accessible (check IP address, port 8000, and firewall).`);
+        setAuthError(`Cannot connect to Aggregator Hub at "${serverUrl}". Verify the central server is running on port 8000.`);
       } else {
         setAuthError('Authentication failed. Check server URL and credentials.');
       }
@@ -187,15 +187,21 @@ function App() {
   const handleUploadDefault = async () => {
     setUploading(true);
     try {
-      // Simulate/trigger loading sample banking dataset
-      const formData = new FormData();
-      formData.append('use_sample', 'true');
-      const { data } = await axios.post(`${DEFAULT_CLIENT_API}/dataset/upload`, formData);
+      const { data } = await axios.post(`${DEFAULT_CLIENT_API}/dataset/load-sample`);
       setDatasetInfo(data);
       if (data.sample_records) setSampleData(data.sample_records);
       setActiveStep(2);
     } catch (err) {
-      alert('Failed to load sample dataset');
+      try {
+        const formData = new FormData();
+        formData.append('use_sample', 'true');
+        const { data } = await axios.post(`${DEFAULT_CLIENT_API}/dataset/upload`, formData);
+        setDatasetInfo(data);
+        if (data.sample_records) setSampleData(data.sample_records);
+        setActiveStep(2);
+      } catch {
+        alert('Failed to load sample dataset. Please check client node console.');
+      }
     } finally {
       setUploading(false);
     }
@@ -204,18 +210,20 @@ function App() {
   const handleFileUpload = async (file) => {
     if (!file) return;
     setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const { data } = await axios.post(`${DEFAULT_CLIENT_API}/dataset/upload`, formData, {
+      const { data } = await axios.post(`${DEFAULT_CLIENT_API}/upload-dataset`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 45000,
+        timeout: 30000,
       });
       setDatasetInfo(data);
       if (data.sample_records) setSampleData(data.sample_records);
       setActiveStep(2);
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to upload and chunk dataset.');
+      const detail = err.response?.data?.detail || err.message;
+      alert(`Upload failed: ${detail}\nMake sure your CSV contains banking tabular data.`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -245,13 +253,13 @@ function App() {
     try {
       const { data } = await axios.post(`${DEFAULT_CLIENT_API}/train/send-weights`, {
         server_url: serverUrl,
-        token: token,   // JWT token needed by aggregator to accept the update
+        token: token,
       });
       setTransmissionSuccess(true);
       setActiveStep(5);
     } catch (err) {
       const detail = err.response?.data?.detail || err.message;
-      alert(`Transmission failed: ${detail}\n\nTarget URL: ${serverUrl}\nEnsure Central Aggregator Server is running, accessible, and you are logged in.`);
+      alert(`Transmission failed: ${detail}\n\nTarget URL: ${serverUrl}\nEnsure Central Aggregator Server is running and you are logged in.`);
     } finally {
       setSendingWeights(false);
     }
@@ -262,7 +270,7 @@ function App() {
     try {
       const { data } = await axios.post(`${DEFAULT_CLIENT_API}/validate/global`, {
         server_url: serverUrl,
-        token: token,   // JWT token needed to fetch global model from aggregator
+        token: token,
       });
       setGlobalEvalResult(data);
     } catch (err) {
@@ -273,26 +281,25 @@ function App() {
     }
   };
 
-
   // Auth Screen if not logged in
   if (!token) {
     return (
-      <div className="min-h-screen bg-[#070a12] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-cyan-950/30 via-[#070a12] to-black pointer-events-none"></div>
+      <div className="min-h-screen bg-[#05070d] text-slate-100 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-950/25 via-[#05070d] to-black pointer-events-none"></div>
 
-        <div className="glass-card w-full max-w-md p-8 rounded-3xl border border-cyan-500/20 glow-cyan space-y-6 relative z-10">
-          <div className="text-center space-y-2">
-            <div className="inline-flex p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl text-black shadow-lg shadow-cyan-500/20 mb-2">
-              <Shield size={32} strokeWidth={2.5} />
+        <div className="bento-card-gold w-full max-w-md p-8 rounded-3xl space-y-6 relative z-10">
+          <div className="text-center space-y-2.5">
+            <div className="inline-flex p-3.5 bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 rounded-2xl text-slate-950 shadow-xl shadow-amber-500/20 mb-1">
+              <ShieldCheck size={32} strokeWidth={2.5} />
             </div>
-            <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-black tracking-tight gold-gradient-text">
               FedVault AI
             </h1>
-            <p className="text-xs text-slate-400 font-mono uppercase tracking-widest">Bank Client Node Portal</p>
+            <p className="text-xs text-amber-300/80 font-mono uppercase tracking-widest font-bold">Bank Node Vault Terminal</p>
           </div>
 
           {authError && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400 flex items-center gap-2">
+            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2">
               <AlertCircle size={16} /> {authError}
             </div>
           )}
@@ -301,22 +308,22 @@ function App() {
             {authMode === 'register' && (
               <>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-400">Node Institution Name</label>
+                  <label className="text-xs font-mono text-slate-400">Bank Node Institution Name</label>
                   <div className="relative">
-                    <Server size={16} className="absolute left-3 top-3 text-slate-500" />
+                    <Building2 size={16} className="absolute left-3 top-3 text-slate-500" />
                     <input 
                       type="text"
                       required
                       value={nodeNameInput}
                       onChange={(e) => setNodeNameInput(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
                       placeholder="e.g. Bank-Branch-Alpha"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-mono text-slate-400">Username</label>
+                  <label className="text-xs font-mono text-slate-400">Operator Username</label>
                   <div className="relative">
                     <User size={16} className="absolute left-3 top-3 text-slate-500" />
                     <input 
@@ -324,7 +331,7 @@ function App() {
                       required
                       value={usernameInput}
                       onChange={(e) => setUsernameInput(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
                       placeholder="bank_operator_01"
                     />
                   </div>
@@ -333,22 +340,22 @@ function App() {
             )}
 
             <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-400">{authMode === 'login' ? 'Email or Username' : 'Email Address'}</label>
+              <label className="text-xs font-mono text-slate-400">Institutional Email</label>
               <div className="relative">
-                <Key size={16} className="absolute left-3 top-3 text-slate-500" />
+                <User size={16} className="absolute left-3 top-3 text-slate-500" />
                 <input 
-                  type="text"
+                  type="email"
                   required
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
-                  placeholder={authMode === 'login' ? 'test1@gmail.com or B_O_1' : 'operator@bankbranch.com'}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
+                  placeholder="operator@bankbranch.com"
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-400">Password</label>
+              <label className="text-xs font-mono text-slate-400">Security Password</label>
               <div className="relative">
                 <Key size={16} className="absolute left-3 top-3 text-slate-500" />
                 <input 
@@ -356,7 +363,7 @@ function App() {
                   required
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
                   placeholder="••••••••••••"
                 />
               </div>
@@ -364,35 +371,32 @@ function App() {
 
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
-                <label className="text-xs font-mono text-slate-400">Aggregator Hub URL</label>
-                <span className="text-[10px] text-slate-500 font-mono">Port 8000</span>
+                <label className="text-xs font-mono text-slate-400">Central Aggregator URL</label>
+                <span className="text-[10px] text-amber-400/80 font-mono font-bold">Port 8000</span>
               </div>
               <input 
                 type="text"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="http://localhost:8000 or http://192.168.1.X:8000"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
+                placeholder="http://localhost:8000"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-amber-400"
               />
-              <p className="text-[10px] text-slate-500 font-mono">
-                Tip: If server is on another PC, enter its Wi-Fi IP (e.g. http://192.168.1.50:8000)
-              </p>
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-cyan-500/20"
+              className="w-full py-3 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 hover:brightness-110 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-amber-500/25 mt-2 cursor-pointer"
             >
-              {authMode === 'login' ? 'Authenticate Bank Node' : 'Register New Bank Node'}
+              {authMode === 'login' ? 'Authenticate Bank Node' : 'Register Enclave Node'}
             </button>
           </form>
 
-          <div className="text-center pt-2">
+          <div className="text-center pt-1">
             <button
               onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
-              className="text-xs text-cyan-400 hover:underline font-mono"
+              className="text-xs text-amber-300 hover:underline font-mono"
             >
-              {authMode === 'login' ? 'Need to register a new bank node?' : 'Already registered? Switch to login'}
+              {authMode === 'login' ? 'Need to register a new bank node?' : 'Already enrolled? Switch to login'}
             </button>
           </div>
         </div>
@@ -401,49 +405,52 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-black">
-      {/* Top Navbar */}
-      <header className="glass-card sticky top-0 z-30 border-b border-slate-800/80 px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[#05070d] text-slate-100 flex flex-col font-sans selection:bg-amber-400 selection:text-black">
+      {/* Background ambient lighting */}
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-950/15 via-[#05070d] to-black pointer-events-none"></div>
+
+      {/* Top Sovereign Navbar */}
+      <header className="bento-card sticky top-0 z-30 mx-4 mt-3 px-6 py-3.5 flex items-center justify-between border-b border-amber-500/20">
         <div className="flex items-center gap-4">
-          <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-2.5 rounded-xl text-black shadow-lg shadow-emerald-500/20">
-            <Shield size={24} strokeWidth={2.5} />
+          <div className="bg-gradient-to-br from-amber-400 via-yellow-500 to-amber-600 p-2.5 rounded-2xl text-slate-950 shadow-lg shadow-amber-500/20">
+            <Building2 size={24} strokeWidth={2.5} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-xl font-extrabold tracking-tight gold-gradient-text">
                 FedVault AI
               </h1>
-              <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-md">
-                Bank Node Client
+              <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/10 text-amber-300 border border-amber-500/25 rounded-md">
+                Branch Node Enclave
               </span>
             </div>
-            <p className="text-xs text-slate-400 font-medium">Node: {user?.node_name || 'Bank Branch Alpha'}</p>
+            <p className="text-xs text-slate-400 font-medium">Branch Operator: <strong className="text-amber-200">{user?.node_name || user?.username || 'Bank-Branch-Alpha'}</strong></p>
           </div>
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 bg-slate-900/90 rounded-xl border border-slate-800 text-xs font-mono text-slate-300">
+          <div className="hidden sm:flex items-center gap-2 px-3.5 py-1.5 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-300">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping"></span>
-            Connected: {serverUrl}
+            <span className="text-emerald-400 font-bold">Aggregator Link:</span> {serverUrl}
           </div>
           <button
             onClick={handleLogout}
-            className="px-3.5 py-2 text-xs font-semibold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl transition-all"
+            className="px-3.5 py-2 text-xs font-bold text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl transition-all"
           >
-            Disconnect Node
+            Disconnect Enclave
           </button>
         </div>
       </header>
 
-      {/* Step Wizard Navigator */}
-      <div className="glass-card border-b border-slate-800 px-6 py-4">
+      {/* Sovereign Bento Step Wizard Navigator */}
+      <div className="mx-4 mt-4 bento-card border border-slate-800 px-6 py-3.5">
         <div className="max-w-5xl mx-auto flex justify-between items-center relative">
           {[
-            { num: 1, title: 'Dataset Loader', icon: Database },
-            { num: 2, title: 'Preprocessing', icon: Layers },
-            { num: 3, title: 'Local Training', icon: Cpu },
-            { num: 4, title: 'HE Transmission', icon: Lock },
-            { num: 5, title: 'Global Validation', icon: CheckCircle2 }
+            { num: 1, title: 'Vault Ingestion', icon: Database },
+            { num: 2, title: 'Normalization', icon: Layers },
+            { num: 3, title: 'Local PyTorch', icon: Cpu },
+            { num: 4, title: 'CKKS Encryption', icon: Lock },
+            { num: 5, title: 'Global Benchmark', icon: CheckCircle2 }
           ].map((s) => {
             const Icon = s.icon;
             const isActive = activeStep === s.num;
@@ -452,90 +459,88 @@ function App() {
               <button
                 key={s.num}
                 onClick={() => setActiveStep(s.num)}
-                className={`flex items-center gap-2.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-                  isActive
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 glow-emerald'
-                    : isCompleted
-                    ? 'text-slate-300 bg-slate-900/80 border border-slate-800'
-                    : 'text-slate-500 hover:text-slate-400'
+                className={`flex items-center gap-2.5 transition-all text-xs font-mono z-10 ${
+                  isActive 
+                    ? 'text-amber-300 font-black' 
+                    : isCompleted 
+                      ? 'text-emerald-400' 
+                      : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
-                <div className={`p-1.5 rounded-lg ${isActive ? 'bg-emerald-500 text-black' : 'bg-slate-800'}`}>
-                  <Icon size={14} />
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs transition-all ${
+                  isActive 
+                    ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 shadow-md shadow-amber-500/25 scale-105' 
+                    : isCompleted 
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
+                      : 'bg-slate-900 border border-slate-800 text-slate-500'
+                }`}>
+                  {isCompleted ? <CheckCircle2 size={15} /> : <Icon size={14} />}
                 </div>
-                <span className="hidden md:inline">{s.title}</span>
+                <span className="hidden md:inline font-bold">{s.num}. {s.title}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-6 space-y-6">
-        {/* STEP 1: Dataset Loader */}
+      {/* Main Workspace Area */}
+      <main className="flex-1 p-4 space-y-5 max-w-7xl mx-auto w-full relative z-10">
+        {/* STEP 1: Dataset Vault */}
         {activeStep === 1 && (
-          <div className="glass-card p-6 rounded-3xl border border-slate-800 space-y-6 glow-emerald">
-            <div className="flex justify-between items-start">
+          <div className="bento-card p-6 rounded-3xl border border-slate-800 space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Database size={20} className="text-emerald-400" />
-                  Local Banking Transaction Dataset Loader
+                <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+                  <Database size={20} className="text-amber-400" />
+                  Local Bank Branch Data Ingestion & Vault Isolation
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Load customer records locally. Strictly zero raw customer data is uploaded off-premises.
+                  Upload proprietary financial transaction records. Customer data strictly stays inside this local node.
                 </p>
               </div>
-              <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-mono">
-                Local Privacy Vault
-              </span>
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/25 rounded-xl text-xs font-mono text-emerald-400">
+                <Shield size={14} /> Zero Data Exfiltration Guaranteed
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Drag & Drop Upload Zone */}
               <div
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={(e) => {
                   e.preventDefault();
                   setIsDragging(false);
-                  if (e.dataTransfer.files?.[0]) {
-                    handleFileUpload(e.dataTransfer.files[0]);
-                  }
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleFileUpload(file);
                 }}
-                className={`border-2 border-dashed p-8 rounded-2xl flex flex-col items-center justify-center text-center space-y-4 transition-all ${
+                className={`p-8 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center text-center gap-3.5 transition-all ${
                   isDragging
-                    ? 'border-emerald-400 bg-emerald-950/40 ring-4 ring-emerald-500/20'
-                    : 'border-slate-800 hover:border-emerald-500/50 bg-slate-950/40'
+                    ? 'border-amber-400 bg-amber-500/10 scale-[1.01]'
+                    : 'border-slate-800 bg-slate-950/60 hover:border-amber-500/40'
                 }`}
               >
                 <input
-                  type="file"
                   ref={fileInputRef}
+                  type="file"
                   accept=".csv,.xlsx,.xls"
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
-                  }}
+                  onChange={(e) => handleFileUpload(e.target.files[0])}
                   className="hidden"
                 />
-
-                <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400">
-                  <Upload size={32} className={uploading ? 'animate-bounce text-emerald-400' : 'text-emerald-400'} />
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-400 border border-amber-500/20">
+                  <Upload size={22} />
                 </div>
-
                 <div>
-                  <h4 className="text-sm font-bold text-slate-200">
-                    {uploading ? 'Processing & Partitioning Dataset...' : 'Upload Bank Customer Dataset'}
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                    Drag & drop Kaggle CSV here, or browse from disk. Automatically partitioned per banking node.
-                  </p>
+                  <p className="text-sm font-bold text-slate-200">Drag & Drop Bank Dataset Here</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Supports CSV or Excel files with customer risk attributes</p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs">
+                <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs mt-1">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploading}
-                    className="flex-1 py-2 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5"
+                    className="flex-1 py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <FileText size={14} /> Browse CSV
                   </button>
@@ -543,98 +548,98 @@ function App() {
                     type="button"
                     onClick={handleUploadDefault}
                     disabled={uploading}
-                    className="flex-1 py-2 px-3 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-medium text-xs rounded-xl transition-all"
+                    className="flex-1 py-2.5 px-3 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-bold text-xs rounded-xl transition-all cursor-pointer"
                   >
                     Load Sample CSV
                   </button>
                 </div>
-
-                <span className="text-[10px] text-slate-500 font-mono">
-                  Supports Bank Churn, Fraud & Credit CSVs • Auto-excludes ID columns
-                </span>
               </div>
 
-              <div className="glass-card p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-4">
+              {/* Dataset Status Diagnostic Bento */}
+              <div className="bento-card-gold p-6 rounded-2xl flex flex-col justify-between space-y-4">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Dataset Status Diagnostic</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-300 font-mono">Dataset Vault Telemetry</h4>
                   {datasetInfo?.chunk_desc && (
-                    <span className="px-2 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-md text-[10px] font-mono font-bold">
+                    <span className="px-2.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-md text-[10px] font-mono font-bold">
                       {datasetInfo.chunk_desc}
                     </span>
                   )}
                 </div>
                 <div className="space-y-2 text-xs font-mono">
-                  <div className="flex justify-between py-1 border-b border-slate-800">
-                    <span className="text-slate-500">Dataset Loaded:</span>
-                    <span className={datasetInfo ? 'text-emerald-400 font-bold truncate max-w-[200px]' : 'text-slate-500'} title={datasetInfo?.filename}>
-                      {datasetInfo ? (datasetInfo.raw_filename || datasetInfo.filename) : 'NO'}
+                  <div className="flex justify-between py-1 border-b border-amber-500/15">
+                    <span className="text-slate-400">Vault File:</span>
+                    <span className={datasetInfo ? 'text-amber-300 font-bold truncate max-w-[200px]' : 'text-slate-500'} title={datasetInfo?.filename}>
+                      {datasetInfo ? (datasetInfo.raw_filename || datasetInfo.filename) : 'No File Loaded'}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-800">
-                    <span className="text-slate-500">Local Chunk Records:</span>
-                    <span className="text-cyan-300 font-bold">
+                  <div className="flex justify-between py-1 border-b border-amber-500/15">
+                    <span className="text-slate-400">Private Records:</span>
+                    <span className="text-amber-300 font-bold">
                       {datasetInfo ? (datasetInfo.total_records || datasetInfo.rows || 0).toLocaleString() : '--'}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-slate-800">
-                    <span className="text-slate-500">Predictive Features:</span>
-                    <span className="text-cyan-300 font-bold">
+                  <div className="flex justify-between py-1 border-b border-amber-500/15">
+                    <span className="text-slate-400">Feature Count:</span>
+                    <span className="text-amber-300 font-bold">
                       {datasetInfo?.feature_names?.length ? `${datasetInfo.feature_names.length} Features` : datasetInfo?.columns?.length ? `${datasetInfo.columns.length - 1} Features` : '--'}
                     </span>
                   </div>
                   <div className="flex justify-between py-1">
-                    <span className="text-slate-500">Privacy Status:</span>
-                    <span className="text-emerald-400 font-bold">🔒 Isolated in Branch Vault</span>
+                    <span className="text-slate-400">Vault Privacy Seal:</span>
+                    <span className="text-emerald-400 font-bold flex items-center gap-1">
+                      <Lock size={12} /> Local Enclave Secured
+                    </span>
                   </div>
                 </div>
                 <button
                   onClick={() => setActiveStep(2)}
                   disabled={!datasetInfo}
-                  className={`w-full py-2.5 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 transition-all ${
+                  className={`w-full py-2.5 font-black text-xs rounded-xl flex items-center justify-center gap-2 transition-all ${
                     datasetInfo
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-black shadow-lg shadow-emerald-500/20'
-                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                      ? 'bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-slate-950 shadow-lg shadow-amber-500/20 cursor-pointer'
+                      : 'bg-slate-900 text-slate-600 cursor-not-allowed border border-slate-800'
                   }`}
                 >
-                  Proceed to Data Preprocessing <ChevronRight size={16} />
+                  Proceed to Normalization <ChevronRight size={16} />
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 2: Preprocessing */}
+        {/* STEP 2: Normalization Matrix */}
         {activeStep === 2 && (
-          <div className="glass-card p-6 rounded-3xl border border-slate-800 space-y-6">
+          <div className="bento-card p-6 rounded-3xl border border-slate-800 space-y-6">
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Layers size={20} className="text-emerald-400" />
-                  Local Preprocessing & Feature Extraction
+                  <Layers size={20} className="text-amber-400" />
+                  Local Feature Extraction & Scaling Pipeline
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">Standardizing feature scales and setting train/test splits for local node partition.</p>
+                <p className="text-xs text-slate-400 mt-1">Standardizing continuous variables and encoding categorical columns for neural inputs.</p>
               </div>
               <button
                 onClick={() => setActiveStep(3)}
-                className="px-5 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-black font-extrabold text-xs rounded-xl flex items-center gap-2"
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-black text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer"
               >
-                Continue to PyTorch Training <ChevronRight size={16} />
+                Proceed to Local Training <ChevronRight size={16} />
               </button>
             </div>
 
-            <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3 font-mono text-xs">
+            <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3 font-mono text-xs">
               <div className="flex justify-between items-center">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Feature Pipeline Matrix</h4>
+                <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider">Feature Pipeline Matrix</h4>
                 {datasetInfo?.column_names && (
-                  <span className="text-[11px] text-cyan-400 font-mono">
+                  <span className="text-[11px] text-amber-400 font-mono">
                     Target Label: <strong className="text-emerald-400">{datasetInfo.column_names[datasetInfo.column_names.length - 1]}</strong>
                   </span>
                 )}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {(datasetInfo?.feature_names || datasetInfo?.column_names?.slice(0, -1) || ["credit_score", "country", "gender", "age", "tenure", "balance", "products_number", "credit_card", "active_member", "estimated_salary"]).map((feat, i) => (
-                  <div key={i} className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-cyan-300 truncate" title={feat}>
-                    {feat}
+                  <div key={i} className="bg-slate-900/90 p-3 rounded-xl border border-slate-800 text-amber-300 truncate" title={feat}>
+                    <span className="text-[10px] text-slate-500 block">F_{i+1}</span>
+                    <span className="font-bold">{feat}</span>
                   </div>
                 ))}
               </div>
@@ -642,30 +647,28 @@ function App() {
           </div>
         )}
 
-        {/* STEP 3: Local Training */}
+        {/* STEP 3: Local Training Studio */}
         {activeStep === 3 && (
-          <div className="glass-card p-6 rounded-3xl border border-slate-800 space-y-6">
-            <div className="flex justify-between items-start">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Cpu size={20} className="text-emerald-400" />
-                  PyTorch Local Bank Model Training
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">Train neural network on local branch records to compute parameter gradients.</p>
-              </div>
+          <div className="bento-card p-6 rounded-3xl border border-slate-800 space-y-6">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Cpu size={20} className="text-amber-400" />
+                Local PyTorch Bank Model Training Studio
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">Train neural network strictly on local customer data to compute gradient weights.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <div className="space-y-4 bg-slate-950/80 p-5 rounded-2xl border border-slate-800">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Hyperparameters</h4>
+              <div className="space-y-4 bg-slate-950 p-5 rounded-2xl border border-slate-800">
+                <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wider font-mono">Hyperparameters</h4>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-mono text-slate-400 block mb-1">Epochs</label>
+                    <label className="text-xs font-mono text-slate-400 block mb-1">Local Epochs</label>
                     <input 
                       type="number"
                       value={epochs}
                       onChange={(e) => setEpochs(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-emerald-300"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-400"
                     />
                   </div>
                   <div>
@@ -675,39 +678,39 @@ function App() {
                       step="0.0001"
                       value={lr}
                       onChange={(e) => setLr(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-emerald-300"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-400"
                     />
                   </div>
                   <button
                     onClick={handleStartTraining}
                     disabled={training}
-                    className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 text-black font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-500/20"
+                    className="w-full py-3 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 hover:brightness-110 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 cursor-pointer"
                   >
                     {training ? 'Executing PyTorch Local Epochs...' : 'Start Local Model Training'}
                   </button>
                 </div>
               </div>
 
-              <div className="md:col-span-2 glass-card p-5 rounded-2xl border border-slate-800 space-y-4">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Training Diagnostic Output</h4>
+              <div className="md:col-span-2 bento-card p-5 rounded-2xl border border-slate-800 space-y-4">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono">Training Diagnostic Output</h4>
                 {trainingResults ? (
                   <div className="space-y-3 font-mono text-xs">
-                    <div className="flex justify-between p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                      <span className="text-emerald-300">Local Training Accuracy:</span>
-                      <span className="text-emerald-400 font-extrabold">{trainingResults.accuracy || '93.4%'}</span>
+                    <div className="flex justify-between p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
+                      <span className="text-emerald-300 font-bold">Local Training Accuracy:</span>
+                      <span className="text-emerald-400 font-extrabold text-sm">{trainingResults.accuracy || '93.4%'}</span>
                     </div>
-                    <div className="flex justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
+                    <div className="flex justify-between p-3.5 bg-slate-950 rounded-xl border border-slate-800">
                       <span className="text-slate-400">Final Cross-Entropy Loss:</span>
-                      <span className="text-cyan-300">{trainingResults.loss || '0.1421'}</span>
+                      <span className="text-amber-300 font-bold">{trainingResults.loss || '0.1421'}</span>
                     </div>
-                    <div className="flex justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
+                    <div className="flex justify-between p-3.5 bg-slate-950 rounded-xl border border-slate-800">
                       <span className="text-slate-400">Sample Count Weighted Contribution:</span>
-                      <span className="text-cyan-300 font-bold">{trainingResults.samples || datasetInfo?.total_records || '--'} records</span>
+                      <span className="text-amber-300 font-bold">{trainingResults.samples || datasetInfo?.total_records || '--'} records</span>
                     </div>
                   </div>
                 ) : (
                   <div className="h-40 flex items-center justify-center text-slate-500 text-xs font-mono">
-                    Click 'Start Local Model Training' to begin PyTorch execution.
+                    Click 'Start Local Model Training' to begin PyTorch training on this bank node.
                   </div>
                 )}
               </div>
@@ -715,36 +718,34 @@ function App() {
           </div>
         )}
 
-        {/* STEP 4: HE Transmission */}
+        {/* STEP 4: CKKS Encryption & Transmission */}
         {activeStep === 4 && (
-          <div className="glass-card p-6 rounded-3xl border border-slate-800 space-y-6 glow-emerald">
-            <div className="flex justify-between items-start">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Lock size={20} className="text-emerald-400" />
-                  Homomorphic Encryption & FedAvg Transmission
-                </h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Model weights are encrypted using CKKS Homomorphic scheme before transmission to central server.
-                </p>
-              </div>
+          <div className="bento-card p-6 rounded-3xl border border-amber-500/30 space-y-6 glow-gold">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Lock size={20} className="text-amber-400" />
+                TenSEAL CKKS Homomorphic Encryption & FedAvg Transmission
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Model weight parameters are encrypted into ciphertext vectors before transmission to the central aggregator.
+              </p>
             </div>
 
             <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 space-y-4">
               <div className="flex items-center gap-3 text-xs font-mono text-slate-300">
-                <Shield className="text-emerald-400" size={20} />
-                <span>Payload: Encrypted Weights Tensor Array (\(W_i\)) + Local Sample Weight (\(n_i\))</span>
+                <ShieldCheck className="text-emerald-400" size={20} />
+                <span>Ciphertext Payload: Encrypted Weight Matrices (W_k) + Sample Record Volume (n_k)</span>
               </div>
               <button
                 onClick={handleSendWeights}
                 disabled={sendingWeights}
-                className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-emerald-500/20"
+                className="w-full py-3.5 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 hover:brightness-110 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/25 cursor-pointer"
               >
                 {sendingWeights ? 'Encrypting & Transmitting Payload...' : 'Transmit Encrypted Weights to Central Aggregator'}
               </button>
 
               {transmissionSuccess && (
-                <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-300 font-mono text-xs flex items-center gap-2">
+                <div className="p-4 bg-emerald-500/15 border border-emerald-500/35 rounded-xl text-emerald-300 font-mono text-xs flex items-center gap-2">
                   <CheckCircle2 size={18} /> Model weight updates successfully incorporated into global FedAvg round!
                 </div>
               )}
@@ -752,25 +753,25 @@ function App() {
           </div>
         )}
 
-        {/* STEP 5: Global Validation */}
+        {/* STEP 5: Global Model Validation */}
         {activeStep === 5 && (
-          <div className="glass-card p-6 rounded-3xl border border-slate-800 space-y-6">
+          <div className="bento-card p-6 rounded-3xl border border-slate-800 space-y-6">
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <CheckCircle2 size={20} className="text-emerald-400" />
-                Global Federated Model Validation
+                Global Federated Model Benchmark & Validation
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Evaluate the consolidated global model on your branch local validation set.
+                Pull consolidated global parameters and benchmark against this branch local test split.
               </p>
             </div>
 
             <button
               onClick={handleEvaluateGlobalModel}
               disabled={evaluatingGlobal}
-              className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-black font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-500/20"
+              className="px-6 py-3 bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 cursor-pointer"
             >
-              {evaluatingGlobal ? 'Fetching & Validating Global Weights...' : 'Run Local Branch Validation Test'}
+              {evaluatingGlobal ? 'Fetching & Validating Global Weights...' : 'Run Local Branch Benchmark Test'}
             </button>
 
             {globalEvalResult && (
@@ -780,27 +781,27 @@ function App() {
                   <span className="text-2xl font-black text-emerald-400">{globalEvalResult.fl_global_accuracy || '94.2%'}</span>
                 </div>
                 <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                  <span className="text-slate-400 block mb-1">Validation Loss:</span>
-                  <span className="text-2xl font-black text-cyan-300">{globalEvalResult.fl_global_loss || '0.1280'}</span>
+                  <span className="text-slate-400 block mb-1">Consolidated Loss:</span>
+                  <span className="text-2xl font-black text-amber-300">{globalEvalResult.fl_global_loss || '0.1280'}</span>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* ── FL Process Log Console ── */}
-        <div className="glass-card p-6 rounded-2xl border border-slate-800 space-y-4">
+        {/* Live Node Audit Console */}
+        <div className="bento-card p-6 rounded-2xl border border-slate-800 space-y-4">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Terminal size={18} className="text-cyan-400" /> Node Process Log
+                <Terminal size={18} className="text-amber-400" /> Local Branch Audit Terminal
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Live trace of every FL step on this node: dataset loading, local training, weight transmission, and global model receipt.
+                Real-time execution log of dataset caching, local PyTorch gradient calculations, and encrypted transmissions.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="px-2 py-1 text-[11px] font-mono bg-slate-900 border border-slate-800 text-cyan-400 rounded-lg">
+              <span className="px-2.5 py-1 text-[11px] font-mono bg-slate-950 border border-slate-800 text-amber-300 rounded-lg">
                 {clientLogs.length} events
               </span>
               <button
@@ -810,28 +811,11 @@ function App() {
                     clientLogScrolledUp.current = false;
                   }
                 }}
-                className="px-3 py-1.5 text-xs font-semibold text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-lg transition-all"
+                className="px-3 py-1.5 text-xs font-bold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-all"
               >
                 Jump to Latest
               </button>
             </div>
-          </div>
-
-          {/* Color legend */}
-          <div className="flex flex-wrap gap-3 text-[10px] font-mono">
-            {[
-              { tag: '[TRAIN]', color: 'text-violet-400', dot: 'bg-violet-400', label: 'Training' },
-              { tag: '[TX]',    color: 'text-cyan-400',   dot: 'bg-cyan-400',   label: 'Weight transmission' },
-              { tag: '[GLOBAL]',color: 'text-emerald-400',dot: 'bg-emerald-400',label: 'Global model' },
-              { tag: '[INFO]',  color: 'text-slate-400',  dot: 'bg-slate-400',  label: 'Info' },
-              { tag: '[ERROR]', color: 'text-rose-400',   dot: 'bg-rose-400',   label: 'Error' },
-            ].map(({ tag, color, dot, label }) => (
-              <span key={tag} className="flex items-center gap-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full ${dot} inline-block`}></span>
-                <span className={color}>{tag}</span>
-                <span className="text-slate-600">{label}</span>
-              </span>
-            ))}
           </div>
 
           <div
@@ -841,12 +825,12 @@ function App() {
               if (!el) return;
               clientLogScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 80;
             }}
-            className="bg-[#05070d] p-4 rounded-xl border border-slate-800 font-mono text-xs h-80 overflow-y-auto space-y-0.5 leading-relaxed"
+            className="bg-[#020408] p-4 rounded-xl border border-slate-800 font-mono text-xs h-80 overflow-y-auto space-y-0.5 leading-relaxed"
           >
             {clientLogs.length === 0 ? (
               <div className="flex items-center justify-center h-full">
                 <p className="text-slate-600 text-center">
-                  No logs yet. Load a dataset and run local training to see the FL process traced here.
+                  No local logs yet. Load a dataset and start local training to trace operations.
                 </p>
               </div>
             ) : (
@@ -855,26 +839,16 @@ function App() {
                 const ts  = tsMatch ? tsMatch[1] : null;
                 const msg = tsMatch ? log.slice(tsMatch[0].length) : log;
 
-                const isTrainStart = msg.includes('========== LOCAL TRAINING START');
-                const isTrainEnd   = msg.includes('========== TRAINING COMPLETE');
-                const isTxStart    = msg.includes('========== TRANSMITTING WEIGHTS');
-                const isTxEnd      = msg.includes('========== TRANSMISSION COMPLETE');
-                const isSep = isTrainStart || isTrainEnd || isTxStart || isTxEnd;
-
                 let color = 'text-slate-400';
-                if (msg.startsWith('[TRAIN]')) color = msg.includes('=====') ? 'text-violet-300 font-bold' : msg.includes('[TRAIN]   ') ? 'text-slate-300' : 'text-violet-400';
-                if (msg.startsWith('[TX]'))    color = msg.includes('=====') ? 'text-cyan-300 font-bold'   : msg.includes('[TX]   ')    ? 'text-slate-300' : 'text-cyan-400';
+                if (msg.startsWith('[TRAIN]')) color = 'text-amber-300';
+                if (msg.startsWith('[TX]'))    color = 'text-yellow-400';
                 if (msg.startsWith('[GLOBAL]'))color = 'text-emerald-400';
                 if (msg.startsWith('[ERROR]')) color = 'text-rose-400';
 
                 return (
-                  <div key={i}>
-                    {(isTrainStart || isTxStart) && <div className="my-1.5 border-t border-slate-700/50 border-dashed" />}
-                    <div className={`flex gap-3 hover:bg-slate-900/40 px-1.5 py-0.5 rounded ${isSep && (isTrainEnd || isTxEnd) ? 'mb-1.5' : ''}`}>
-                      <span className="text-slate-600 select-none shrink-0 w-[58px]">{ts || ''}</span>
-                      <span className={color}>{msg}</span>
-                    </div>
-                    {(isTrainEnd || isTxEnd) && <div className="my-1.5 border-t border-slate-700/50 border-dashed" />}
+                  <div key={i} className="flex gap-3 hover:bg-slate-900/50 px-1.5 py-0.5 rounded">
+                    <span className="text-slate-600 select-none shrink-0 w-[58px]">{ts || ''}</span>
+                    <span className={color}>{msg}</span>
                   </div>
                 );
               })
