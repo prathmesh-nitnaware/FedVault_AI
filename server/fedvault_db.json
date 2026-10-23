@@ -17,6 +17,24 @@
             "created_at": "2026-09-12T01:29:43.198499",
             "last_login": "2026-09-12T11:42:59.350366",
             "is_active": true
+        },
+        {
+            "id": 3,
+            "username": "bank_operator_01",
+            "email": "operator@bankbranch.com",
+            "password_hash": "$2b$12$tdb.l57Ti3Ufidgs6y241OOR00XIedZyJhFGw7shJYV.CxD5Mjlii",
+            "created_at": "2026-10-23T14:15:17.155922",
+            "last_login": "2026-10-23T15:44:03.327907",
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "username": "bank_operator_02",
+            "email": "operator02@bankbranch.com",
+            "password_hash": "$2b$12$nZi9fIBNQK.6nUX2YVxEUOzRcmiIT16qwybA4tAVWY.Ii0sACO3AC",
+            "created_at": "2026-10-23T14:16:29.408186",
+            "last_login": "2026-10-23T19:44:39.413309",
+            "is_active": true
         }
     ],
     "training_sessions": [
@@ -151,6 +169,174 @@
             "loss": 0.6416171789169312,
             "training_round": 2,
             "created_at": "2026-09-12T12:08:10.525520"
+        },
+        {
+            "id": 12,
+            "user_id": 3,
+            "username": "bank_operator_01",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 93.75,
+            "loss": 0.4367811977863312,
+            "training_round": 1,
+            "created_at": "2026-10-23T14:17:59.553107"
+        },
+        {
+            "id": 13,
+            "user_id": 4,
+            "username": "bank_operator_02",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.4639975130558014,
+            "training_round": 1,
+            "created_at": "2026-10-23T14:19:27.568728"
+        },
+        {
+            "id": 14,
+            "user_id": 3,
+            "username": "bank_operator_01",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 87.5,
+            "loss": 0.5700889825820923,
+            "training_round": 1,
+            "created_at": "2026-10-23T15:35:00.587319"
+        },
+        {
+            "id": 15,
+            "user_id": 4,
+            "username": "bank_operator_02",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 87.5,
+            "loss": 0.5700889825820923,
+            "training_round": 1,
+            "created_at": "2026-10-23T15:35:19.107148"
+        },
+        {
+            "id": 16,
+            "user_id": 4,
+            "username": "bank_operator_02",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 87.5,
+            "loss": 0.4635269045829773,
+            "training_round": 2,
+            "created_at": "2026-10-23T15:38:33.519880"
+        },
+        {
+            "id": 17,
+            "user_id": 3,
+            "username": "bank_operator_01",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 87.5,
+            "loss": 0.4635269045829773,
+            "training_round": 2,
+            "created_at": "2026-10-23T15:38:58.037935"
+        },
+        {
+            "id": 18,
+            "user_id": 4,
+            "username": "bank_operator_02",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.46675026416778564,
+            "training_round": 1,
+            "created_at": "2026-10-23T15:46:53.817079"
+        },
+        {
+            "id": 19,
+            "user_id": 3,
+            "username": "bank_operator_01",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.5204543471336365,
+            "training_round": 1,
+            "created_at": "2026-10-23T15:47:19.052224"
+        },
+        {
+            "id": 20,
+            "user_id": 4,
+            "username": "bank_operator_02",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.49736374616622925,
+            "training_round": 2,
+            "created_at": "2026-10-23T15:49:18.914485"
+        },
+        {
+            "id": 21,
+            "user_id": 3,
+            "username": "bank_operator_01",
+            "dataset_name": "sample_banking.csv",
+            "num_features": 9,
+            "num_samples": 80,
+            "accuracy": 81.25,
+            "loss": 0.4995693266391754,
+            "training_round": 2,
+            "created_at": "2026-10-23T15:49:33.710511"
+        },
+        {
+            "id": 22,
+            "user_id": 4,
+            "username": "bank_operator_02",
+            "dataset_name": "branch_beta_data.csv",
+            "num_features": 9,
+            "num_samples": 65,
+            "accuracy": 84.61538461538461,
+            "loss": 0.6023504734039307,
+            "training_round": 1,
+            "created_at": "2026-10-23T19:46:17.024845"
+        },
+        {
+            "id": 23,
+            "user_id": 3,
+            "username": "bank_operator_01",
+            "dataset_name": "branch_alpha_data.csv",
+            "num_features": 9,
+            "num_samples": 60,
+            "accuracy": 58.333333333333336,
+            "loss": 0.6482304930686951,
+            "training_round": 1,
+            "created_at": "2026-10-23T19:46:26.047956"
+        },
+        {
+            "id": 24,
+            "user_id": 3,
+            "username": "bank_operator_01",
+            "dataset_name": "branch_alpha_data.csv",
+            "num_features": 9,
+            "num_samples": 60,
+            "accuracy": 83.33333333333334,
+            "loss": 0.5771803855895996,
+            "training_round": 2,
+            "created_at": "2026-10-23T19:47:58.168303"
+        },
+        {
+            "id": 25,
+            "user_id": 4,
+            "username": "bank_operator_02",
+            "dataset_name": "branch_beta_data.csv",
+            "num_features": 9,
+            "num_samples": 65,
+            "accuracy": 84.61538461538461,
+            "loss": 0.6052171587944031,
+            "training_round": 2,
+            "created_at": "2026-10-23T19:48:14.021632"
         }
     ],
     "federated_rounds": [
@@ -252,9 +438,72 @@
             "avg_loss": 0.6416171789169312,
             "aggregation_method": "FedAvg",
             "created_at": "2026-09-12T12:08:10.535661"
+        },
+        {
+            "id": 12,
+            "round_number": 1,
+            "num_participants": 2,
+            "avg_accuracy": 87.5,
+            "avg_loss": 0.4503893554210663,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-10-23T14:19:27.611890"
+        },
+        {
+            "id": 13,
+            "round_number": 1,
+            "num_participants": 2,
+            "avg_accuracy": 87.5,
+            "avg_loss": 0.5700889825820923,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-10-23T15:35:19.127653"
+        },
+        {
+            "id": 14,
+            "round_number": 2,
+            "num_participants": 2,
+            "avg_accuracy": 87.5,
+            "avg_loss": 0.4635269045829773,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-10-23T15:38:58.079569"
+        },
+        {
+            "id": 15,
+            "round_number": 1,
+            "num_participants": 2,
+            "avg_accuracy": 81.25,
+            "avg_loss": 0.49360230565071106,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-10-23T15:47:19.090225"
+        },
+        {
+            "id": 16,
+            "round_number": 2,
+            "num_participants": 2,
+            "avg_accuracy": 81.25,
+            "avg_loss": 0.49846653640270233,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-10-23T15:49:33.736520"
+        },
+        {
+            "id": 17,
+            "round_number": 1,
+            "num_participants": 2,
+            "avg_accuracy": 72.0,
+            "avg_loss": 0.6243728828430176,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-10-23T19:46:26.069928"
+        },
+        {
+            "id": 18,
+            "round_number": 2,
+            "num_participants": 2,
+            "avg_accuracy": 84.0,
+            "avg_loss": 0.5917595076560974,
+            "aggregation_method": "FedAvg",
+            "created_at": "2026-10-23T19:48:14.045968"
         }
     ],
-    "next_user_id": 3,
-    "next_session_id": 12,
-    "next_round_id": 12
+    "next_user_id": 5,
+    "next_session_id": 26,
+    "next_round_id": 19
 }

@@ -29,7 +29,9 @@ ChartJS.register(
   Filler
 );
 
-const DEFAULT_CLIENT_API = 'http://localhost:8001';
+const DEFAULT_CLIENT_API = typeof window !== 'undefined' && window.location.origin && window.location.origin.includes('http')
+  ? window.location.origin
+  : 'http://localhost:8001';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('fedvault_token') || null);
@@ -77,6 +79,24 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Heartbeat to central aggregator to maintain Online status
+  useEffect(() => {
+    if (!token) return;
+    const sendHeartbeat = async () => {
+      try {
+        const cleanUrl = serverUrl.replace(/\/$/, '');
+        await axios.post(
+          `${cleanUrl}/heartbeat`,
+          { client_status: clientStatus?.status || 'Online' },
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+        );
+      } catch (err) { /* silent heartbeat failure */ }
+    };
+    sendHeartbeat();
+    const hbInterval = setInterval(sendHeartbeat, 10000);
+    return () => clearInterval(hbInterval);
+  }, [token, serverUrl, clientStatus?.status]);
+
   const fetchClientStatus = async () => {
     try {
       const { data } = await axios.get(`${DEFAULT_CLIENT_API}/status`);
@@ -107,22 +127,28 @@ function App() {
     setAuthError('');
     try {
       const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
-      // Auth always goes to the AGGREGATOR server (serverUrl), not the client node
+      const cleanUrl = serverUrl.replace(/\/$/, '');
       const payload = authMode === 'login'
         ? { email: emailInput, password: passwordInput }
-        : { username: usernameInput, email: emailInput, password: passwordInput };
+        : { username: usernameInput, email: emailInput, password: passwordInput, node_name: nodeNameInput };
 
-      const { data } = await axios.post(`${serverUrl}${endpoint}`, payload);
+      const { data } = await axios.post(`${cleanUrl}${endpoint}`, payload, { timeout: 10000 });
 
       if (data.token) {
         localStorage.setItem('fedvault_token', data.token);
         localStorage.setItem('fedvault_user', JSON.stringify(data.user));
-        localStorage.setItem('fedvault_server', serverUrl);
+        localStorage.setItem('fedvault_server', cleanUrl);
         setToken(data.token);
         setUser(data.user);
       }
     } catch (err) {
-      setAuthError(err.response?.data?.detail || 'Authentication failed. Check server URL and credentials.');
+      if (err.response?.data?.detail) {
+        setAuthError(err.response.data.detail);
+      } else if (err.code === 'ERR_NETWORK' || !err.response) {
+        setAuthError(`Cannot connect to Aggregator Hub at "${serverUrl}". Verify the central server is running and accessible (check IP address, port 8000, and firewall).`);
+      } else {
+        setAuthError('Authentication failed. Check server URL and credentials.');
+      }
     }
   };
 
@@ -155,7 +181,9 @@ function App() {
     try {
       const { data } = await axios.post(`${DEFAULT_CLIENT_API}/train/local`, {
         epochs: parseInt(epochs),
-        learning_rate: parseFloat(lr)
+        learning_rate: parseFloat(lr),
+        server_url: serverUrl,
+        token: token,
       });
       setTrainingResults(data);
       setActiveStep(4);
@@ -176,7 +204,8 @@ function App() {
       setTransmissionSuccess(true);
       setActiveStep(5);
     } catch (err) {
-      alert('Transmission failed. Ensure Central Aggregator Server is running and you are logged in.');
+      const detail = err.response?.data?.detail || err.message;
+      alert(`Transmission failed: ${detail}\n\nTarget URL: ${serverUrl}\nEnsure Central Aggregator Server is running, accessible, and you are logged in.`);
     } finally {
       setSendingWeights(false);
     }
@@ -191,7 +220,8 @@ function App() {
       });
       setGlobalEvalResult(data);
     } catch (err) {
-      alert('Global validation failed. Ensure a FL round has completed on the server.');
+      const detail = err.response?.data?.detail || err.message;
+      alert(`Global validation failed: ${detail}\n\nTarget URL: ${serverUrl}\nEnsure a FL round has completed on the server.`);
     } finally {
       setEvaluatingGlobal(false);
     }
@@ -223,48 +253,50 @@ function App() {
 
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-400">Node Institution Name</label>
-                <div className="relative">
-                  <Server size={16} className="absolute left-3 top-3 text-slate-500" />
-                  <input 
-                    type="text"
-                    required
-                    value={nodeNameInput}
-                    onChange={(e) => setNodeNameInput(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
-                    placeholder="e.g. Bank-Branch-Alpha"
-                  />
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-400">Node Institution Name</label>
+                  <div className="relative">
+                    <Server size={16} className="absolute left-3 top-3 text-slate-500" />
+                    <input 
+                      type="text"
+                      required
+                      value={nodeNameInput}
+                      onChange={(e) => setNodeNameInput(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
+                      placeholder="e.g. Bank-Branch-Alpha"
+                    />
+                  </div>
                 </div>
-              </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-slate-400">Username</label>
+                  <div className="relative">
+                    <User size={16} className="absolute left-3 top-3 text-slate-500" />
+                    <input 
+                      type="text"
+                      required
+                      value={usernameInput}
+                      onChange={(e) => setUsernameInput(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
+                      placeholder="bank_operator_01"
+                    />
+                  </div>
+                </div>
+              </>
             )}
 
             <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-400">Username</label>
-              <div className="relative">
-                <User size={16} className="absolute left-3 top-3 text-slate-500" />
-                <input 
-                  type="text"
-                  required
-                  value={usernameInput}
-                  onChange={(e) => setUsernameInput(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
-                  placeholder="bank_operator_01"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-400">Email</label>
+              <label className="text-xs font-mono text-slate-400">{authMode === 'login' ? 'Email or Username' : 'Email Address'}</label>
               <div className="relative">
                 <Key size={16} className="absolute left-3 top-3 text-slate-500" />
                 <input 
-                  type="email"
+                  type="text"
                   required
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2.5 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
-                  placeholder="operator@bankbranch.com"
+                  placeholder={authMode === 'login' ? 'test1@gmail.com or B_O_1' : 'operator@bankbranch.com'}
                 />
               </div>
             </div>
@@ -285,13 +317,20 @@ function App() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-400">Aggregator Hub URL</label>
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-mono text-slate-400">Aggregator Hub URL</label>
+                <span className="text-[10px] text-slate-500 font-mono">Port 8000</span>
+              </div>
               <input 
                 type="text"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-400 font-mono focus:outline-none focus:border-cyan-500"
+                placeholder="http://localhost:8000 or http://192.168.1.X:8000"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
               />
+              <p className="text-[10px] text-slate-500 font-mono">
+                Tip: If server is on another PC, enter its Wi-Fi IP (e.g. http://192.168.1.50:8000)
+              </p>
             </div>
 
             <button

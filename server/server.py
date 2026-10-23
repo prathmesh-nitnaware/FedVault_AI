@@ -94,7 +94,14 @@ def create_user(username: str, email: str, password_hash: str):
 
 def get_user_by_email(email: str):
     for u in _db["users"]:
-        if u["email"] == email:
+        if u["email"].lower() == email.lower():
+            return u
+    return None
+
+def get_user_by_identifier(identifier: str):
+    identifier = identifier.strip().lower()
+    for u in _db["users"]:
+        if u["email"].lower() == identifier or u["username"].lower() == identifier:
             return u
     return None
 
@@ -169,6 +176,9 @@ global_model_config: Optional[Dict] = None  # {input_features, num_classes}
 connected_users: Dict[str, Dict] = {}  # user_id -> {username, status, last_seen, ...}
 online_users: Dict[str, float] = {}  # user_id -> last_heartbeat_timestamp
 
+MIN_CLIENTS_PER_ROUND = 2  # Default to 2 bank nodes for true Federated Learning
+TIMEOUT_SECONDS = 120        # Timeout after which buffered updates auto-aggregate
+
 system_status = {
     "round": 0,
     "status": "Idle",
@@ -183,9 +193,10 @@ system_status = {
     "last_updated": "Never",
     "training_sessions": [],
     "fairness_metrics": [],
+    "min_clients_per_round": MIN_CLIENTS_PER_ROUND,
+    "pending_updates": [],
+    "pending_updates_count": 0,
 }
-
-TIMEOUT_SECONDS = 120  # Wait for partial aggregation
 
 def add_log(msg: str):
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -220,6 +231,7 @@ async def heartbeat_monitor():
                 del online_users[uid]
                 if uid in connected_users:
                     connected_users[uid]["status"] = "Offline"
+                    connected_users[uid]["is_online"] = False
                     add_log(f"[INFO] Bank node '{connected_users[uid].get('username', uid)}' went offline (heartbeat timeout).")
 
         system_status["online_users_count"] = len(online_users)
@@ -294,22 +306,22 @@ async def register(request: Request):
 @app.post("/auth/login")
 async def login(request: Request):
     body = await request.json()
-    email = body.get("email", "").strip().lower()
+    identifier = (body.get("email") or body.get("username") or "").strip()
     password = body.get("password", "")
     
-    if not email or not password:
-        raise HTTPException(status_code=400, detail="Email and password are required")
+    if not identifier or not password:
+        raise HTTPException(status_code=400, detail="Email/Username and password are required")
     
     try:
-        user = get_user_by_email(email)
+        user = get_user_by_identifier(identifier)
     except Exception:
         user = None
     
     if user is None:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid credentials. User does not exist on this server.")
     
     if not bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid credentials. Incorrect password.")
     
     try:
         update_last_login(user["id"])
@@ -318,7 +330,27 @@ async def login(request: Request):
     
     token = create_jwt_token(user["id"], user["username"])
     add_log(f"🔐 User logged in: {user['username']}")
-    
+
+    uid = str(user["id"])
+    username = user["username"]
+    current_time = time.time()
+    online_users[uid] = current_time
+    if uid not in connected_users:
+        connected_users[uid] = {
+            "username": username,
+            "status": "Online",
+            "last_seen": datetime.now().strftime("%H:%M:%S"),
+            "accuracy": None,
+            "loss": None,
+            "num_samples": 0,
+            "dataset_name": "N/A",
+            "is_online": True,
+        }
+    else:
+        connected_users[uid]["last_seen"] = datetime.now().strftime("%H:%M:%S")
+        connected_users[uid]["username"] = username
+        connected_users[uid]["is_online"] = True
+
     return {
         "token": token,
         "user": {"id": user["id"], "username": user["username"], "email": user["email"]}
@@ -347,12 +379,28 @@ async def heartbeat(request: Request):
     except:
         pass
     
+    current_time = time.time()
     online_users[uid] = current_time
-    connected_users[uid] = {
-        "username": username,
-        "status": f"Online ({client_status})",
-        "last_seen": datetime.now().strftime("%H:%M:%S"),
-    }
+    if uid not in connected_users:
+        connected_users[uid] = {
+            "username": username,
+            "status": f"Online ({client_status})",
+            "last_seen": datetime.now().strftime("%H:%M:%S"),
+            "accuracy": None,
+            "loss": None,
+            "num_samples": 0,
+            "dataset_name": "N/A",
+            "is_online": True,
+        }
+    else:
+        connected_users[uid]["last_seen"] = datetime.now().strftime("%H:%M:%S")
+        connected_users[uid]["username"] = username
+        connected_users[uid]["is_online"] = True
+        curr_status = connected_users[uid].get("status", "")
+        # Only update status string if not already showing Trained / Contributed
+        if not (curr_status.startswith("Trained") or curr_status.startswith("Contributed")):
+            connected_users[uid]["status"] = f"Online ({client_status})"
+
     system_status["connected_clients"] = connected_users
     system_status["online_users_count"] = len(online_users)
 
@@ -369,6 +417,37 @@ def get_nodes():
     """Return all currently connected + historically seen bank nodes."""
     return {"nodes": connected_users, "online_count": len(online_users)}
 
+@app.post("/admin/aggregate-now")
+def admin_aggregate_now():
+    """Manually triggers FedAvg aggregation on all currently buffered client updates."""
+    if len(client_updates) == 0:
+        raise HTTPException(status_code=400, detail="No client updates in the buffer to aggregate.")
+    
+    add_log(f"[ADMIN] Manual FedAvg aggregation triggered for Round {system_status['round'] + 1} across {len(client_updates)} client(s).")
+    execute_federated_aggregation()
+    return {
+        "status": "success",
+        "round": system_status["round"],
+        "model_version": system_status["global_model_version"]
+    }
+
+@app.post("/admin/set-min-clients")
+async def admin_set_min_clients(request: Request):
+    """Dynamically set the quorum threshold for auto-aggregation."""
+    global MIN_CLIENTS_PER_ROUND
+    body = await request.json()
+    val = int(body.get("min_clients", 2))
+    if val < 1:
+        val = 1
+    MIN_CLIENTS_PER_ROUND = val
+    system_status["min_clients_per_round"] = MIN_CLIENTS_PER_ROUND
+    add_log(f"[CONFIG] Required nodes per round updated to {MIN_CLIENTS_PER_ROUND}.")
+    # If buffer now meets or exceeds new quorum, trigger aggregation
+    if len(client_updates) >= MIN_CLIENTS_PER_ROUND:
+        add_log(f"[FL] Buffer meets quorum ({len(client_updates)}/{MIN_CLIENTS_PER_ROUND}). Triggering aggregation now.")
+        execute_federated_aggregation()
+    return {"status": "ok", "min_clients_per_round": MIN_CLIENTS_PER_ROUND}
+
 # ── Server Status Endpoint ────────────────────────────────────────────────────
 @app.get("/status")
 def get_status():
@@ -376,7 +455,27 @@ def get_status():
         system_status["total_registered_users"] = get_all_users_count()
     except:
         pass
+    current_time = time.time()
     system_status["online_users_count"] = len(online_users)
+    system_status["min_clients_per_round"] = MIN_CLIENTS_PER_ROUND
+    system_status["pending_updates_count"] = len(client_updates)
+    system_status["pending_updates"] = [
+        {"user_id": m["user_id"], "username": m["username"], "num_samples": m["num_samples"], "accuracy": m["accuracy"]}
+        for m in client_metrics
+    ]
+    # Update is_online dynamically for each connected client
+    for uid, info in connected_users.items():
+        is_active = (current_time - online_users.get(uid, 0)) <= 35
+        info["is_online"] = is_active
+        if not is_active and not info.get("status", "").startswith("Offline"):
+            info["status"] = "Offline"
+        elif is_active and info.get("status") == "Offline":
+            if info.get("accuracy") is not None:
+                info["status"] = f"Trained (Acc: {info['accuracy']}%)"
+            else:
+                info["status"] = "Online"
+
+    system_status["connected_clients"] = connected_users
     return system_status
 
 # ── Client Model Update Submission ────────────────────────────────────────────
@@ -439,15 +538,21 @@ async def submit_model_update(request: Request):
     add_log(f"[FL]   Layers   : {len(weight_tensors)} parameter tensors  (e.g. {layer_summary}{'...' if len(weight_tensors) > 4 else ''})")
     add_log(f"[FL]   Updates pending aggregation: {len(client_updates)} (including this one)")
 
-    client_updates.append({
+    # Check if this node already submitted for the current round (deduplicate)
+    existing_idx = None
+    for idx, u in enumerate(client_updates):
+        if str(u["user_id"]) == str(uid):
+            existing_idx = idx
+            break
+
+    update_entry = {
         "user_id": uid,
         "username": username,
         "weights": weight_tensors,
         "accuracy": accuracy,
         "loss": loss,
-    })
-
-    client_metrics.append({
+    }
+    metrics_entry = {
         "user_id": uid,
         "username": username,
         "accuracy": accuracy,
@@ -456,9 +561,18 @@ async def submit_model_update(request: Request):
         "num_samples": num_samples,
         "input_features": input_features,
         "num_classes": num_classes,
-    })
+    }
+
+    if existing_idx is not None:
+        client_updates[existing_idx] = update_entry
+        client_metrics[existing_idx] = metrics_entry
+        add_log(f"[FL] Updated existing submission for node '{username}' in Round {system_status['round'] + 1}.")
+    else:
+        client_updates.append(update_entry)
+        client_metrics.append(metrics_entry)
 
     # Update connected client info with full contribution data
+    online_users[uid] = time.time()
     connected_users[uid] = {
         "username": username,
         "status": f"Trained (Acc: {accuracy:.1f}%)",
@@ -467,6 +581,7 @@ async def submit_model_update(request: Request):
         "loss": round(loss, 4),
         "num_samples": num_samples,
         "dataset_name": dataset_name,
+        "is_online": True,
     }
     system_status["connected_clients"] = connected_users
 
@@ -486,22 +601,30 @@ async def submit_model_update(request: Request):
 
     heartbeat_monitor.last_update_time = time.time()
 
-    # Check if we should aggregate
+    # Check quorum
     num_updates = len(client_updates)
+    round_target = system_status["round"] + 1
 
-    if num_updates == 1:
-        add_log(f"[FL] Only 1 node has submitted so far. Storing weights as current global model.")
-        add_log(f"[FL] Waiting for additional nodes, or aggregation will auto-trigger after {TIMEOUT_SECONDS}s timeout.")
-        execute_federated_aggregation()
-    elif num_updates >= 2:
-        add_log(f"[FL] {num_updates} nodes have submitted updates. Triggering FedAvg aggregation now.")
+    system_status["pending_updates"] = [
+        {"user_id": m["user_id"], "username": m["username"], "num_samples": m["num_samples"], "accuracy": m["accuracy"]}
+        for m in client_metrics
+    ]
+    system_status["pending_updates_count"] = num_updates
+
+    if num_updates >= MIN_CLIENTS_PER_ROUND:
+        add_log(f"[FL] Quorum reached ({num_updates}/{MIN_CLIENTS_PER_ROUND} nodes ready). Triggering FedAvg aggregation for Round {round_target}!")
         execute_federated_aggregation()
     else:
-        system_status["status"] = f"Waiting for more clients... ({num_updates} received)"
+        remaining = MIN_CLIENTS_PER_ROUND - num_updates
+        node_names = ", ".join([f"'{m['username']}'" for m in client_metrics])
+        system_status["status"] = f"Round {round_target}: Waiting for {remaining} more bank node(s)... ({num_updates}/{MIN_CLIENTS_PER_ROUND} ready)"
+        add_log(f"[FL] Round {round_target} buffer: {num_updates}/{MIN_CLIENTS_PER_ROUND} updates collected from [{node_names}].")
+        add_log(f"[FL] Waiting for {remaining} more bank node(s) to submit, or trigger manually via 'Run FedAvg Aggregation Now'.")
 
     return {
-        "message": "Update accepted",
+        "message": "Update accepted and buffered for round aggregation",
         "current_updates": num_updates,
+        "min_clients_per_round": MIN_CLIENTS_PER_ROUND,
         "round": system_status["round"]
     }
 
@@ -585,9 +708,24 @@ def execute_federated_aggregation():
     except Exception as e:
         add_log(f"[WARN] Failed to save round to DB: {str(e)}")
 
+    # Ensure contributing nodes retain their metrics in connected_users
+    for m in client_metrics:
+        uid = str(m["user_id"])
+        if uid in connected_users:
+            connected_users[uid]["accuracy"] = round(m["accuracy"], 2)
+            connected_users[uid]["loss"] = round(m["loss"], 4)
+            connected_users[uid]["num_samples"] = m["num_samples"]
+            connected_users[uid]["dataset_name"] = m["dataset_name"]
+            connected_users[uid]["status"] = f"Contributed (Round {round_num})"
+            connected_users[uid]["is_online"] = True
+
+    system_status["connected_clients"] = connected_users
+
     # Clear buffers for next round
     client_updates.clear()
     client_metrics.clear()
+    system_status["pending_updates"] = []
+    system_status["pending_updates_count"] = 0
     add_log(f"[INFO] Update buffers cleared. Ready to accept submissions for Round {round_num + 1}.")
 
 
@@ -744,3 +882,10 @@ if os.path.exists(frontend_path):
 else:
     # Fallback to plain server dir (no React build present)
     app.mount("/", StaticFiles(directory=fallback_path, html=True), name="frontend")
+
+if __name__ == "__main__":
+    import uvicorn
+    print("🚀 FedVault AI Aggregator Server starting...")
+    print("   Local:   http://localhost:8000")
+    print("   Network: http://0.0.0.0:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

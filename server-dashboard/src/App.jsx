@@ -105,6 +105,29 @@ function App() {
     }
   };
 
+  const [aggregating, setAggregating] = useState(false);
+
+  const handleAggregateNow = async () => {
+    setAggregating(true);
+    try {
+      await axios.post(`${API_URL}/admin/aggregate-now`);
+      await fetchStatus();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to trigger aggregation. Ensure client updates are buffered.');
+    } finally {
+      setAggregating(false);
+    }
+  };
+
+  const handleSetMinClients = async (val) => {
+    try {
+      await axios.post(`${API_URL}/admin/set-min-clients`, { min_clients: val });
+      await fetchStatus();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const loadPreset = (type) => {
     if (type === 'low_risk') {
       setTestInputs({
@@ -214,16 +237,22 @@ function App() {
   };
 
   // Derive live nodes from server status (replaces old hardcoded mockNodes)
-  const liveNodes = Object.entries(status.connected_clients || {}).map(([uid, info]) => ({
-    id: uid,
-    name: info.username || `Node-${uid}`,
-    status: info.status || '🔴 Offline',
-    last_seen: info.last_seen || '--',
-    accuracy: info.accuracy != null ? `${Number(info.accuracy).toFixed(1)}%` : '--',
-    loss: info.loss != null ? Number(info.loss).toFixed(4) : '--',
-    num_samples: info.num_samples || 0,
-    dataset_name: info.dataset_name || 'N/A',
-  }));
+  const liveNodes = Object.entries(status.connected_clients || {}).map(([uid, info]) => {
+    const isOnline = info.is_online !== undefined
+      ? Boolean(info.is_online)
+      : (info.status && !info.status.toLowerCase().includes('offline'));
+    return {
+      id: uid,
+      name: info.username || `Node-${uid}`,
+      status: info.status || (isOnline ? 'Online' : 'Offline'),
+      is_online: isOnline,
+      last_seen: info.last_seen || '--',
+      accuracy: info.accuracy != null ? `${Number(info.accuracy).toFixed(1)}%` : '--',
+      loss: info.loss != null ? Number(info.loss).toFixed(4) : '--',
+      num_samples: info.num_samples || 0,
+      dataset_name: info.dataset_name || 'N/A',
+    };
+  });
   const totalSamples = liveNodes.reduce((s, n) => s + n.num_samples, 0);
 
   return (
@@ -417,6 +446,92 @@ function App() {
           {/* TAB CONTENT: Overview */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {/* Federated Quorum & Manual Aggregation Control */}
+              <div className="glass-card p-6 rounded-2xl border border-cyan-500/30 glow-cyan relative overflow-hidden">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 pb-4 border-b border-slate-800">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+                        FL Engine Control
+                      </span>
+                      <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                        Round #{ (status.round || 0) + 1 } Aggregation Queue
+                      </h2>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Buffer status: <span className="font-mono text-cyan-300 font-bold">{status.pending_updates_count || 0}</span> of <span className="font-mono text-white">{status.min_clients_per_round || 2}</span> bank nodes submitted. Auto-aggregates once quorum is reached.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs font-mono">
+                      <span className="text-[11px] text-slate-500 px-2">Quorum:</span>
+                      {[1, 2, 3].map(q => (
+                        <button
+                          key={q}
+                          onClick={() => handleSetMinClients(q)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                            (status.min_clients_per_round || 2) === q
+                              ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20'
+                              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          {q} {q === 1 ? 'Node' : 'Nodes'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={handleAggregateNow}
+                      disabled={aggregating || (status.pending_updates_count || 0) === 0}
+                      className={`px-4 py-2.5 rounded-xl text-xs font-extrabold uppercase tracking-wider flex items-center gap-2 transition-all ${
+                        (status.pending_updates_count || 0) > 0
+                          ? 'bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-black shadow-lg shadow-cyan-500/25 cursor-pointer'
+                          : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                      }`}
+                    >
+                      <Zap size={15} />
+                      {aggregating
+                        ? 'Aggregating...'
+                        : (status.pending_updates_count || 0) >= (status.min_clients_per_round || 2)
+                          ? 'Quorum Ready — Run FedAvg'
+                          : (status.pending_updates_count || 0) > 0
+                            ? `Run FedAvg Now (${status.pending_updates_count} Ready)`
+                            : 'Waiting for Node Updates'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Live Pending Buffer Preview */}
+                <div className="mt-4">
+                  <div className="text-[11px] font-mono uppercase text-slate-400 mb-2 flex items-center justify-between">
+                    <span>Buffered Updates in Current Round:</span>
+                    <span>{status.status}</span>
+                  </div>
+
+                  {(!status.pending_updates || status.pending_updates.length === 0) ? (
+                    <div className="p-3 bg-slate-950/70 border border-slate-800/80 rounded-xl text-xs text-slate-500 font-mono flex items-center justify-between">
+                      <span>No bank node updates buffered yet. Submit weights from Client Dashboard(s) to populate.</span>
+                      <span className="text-[10px] text-slate-600">Round #{ (status.round || 0) + 1 }</span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {status.pending_updates.map((p, idx) => (
+                        <div key={idx} className="p-3 bg-cyan-950/20 border border-cyan-500/30 rounded-xl flex items-center justify-between font-mono text-xs">
+                          <div>
+                            <span className="text-cyan-300 font-bold block">{p.username}</span>
+                            <span className="text-[10px] text-slate-400">{p.num_samples} samples</span>
+                          </div>
+                          <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-md text-[11px]">
+                            Acc: {p.accuracy.toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Convergence Graph */}
               <div className="glass-card p-6 rounded-2xl border border-slate-800">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -458,7 +573,7 @@ function App() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {liveNodes.map((node, idx) => {
-                    const isOnline = node.status.includes('Online') || node.status.includes('Trained');
+                      const isOnline = Boolean(node.is_online);
                       const flWeight = totalSamples > 0 ? ((node.num_samples / totalSamples) * 100).toFixed(1) : '0.0';
                       return (
                         <div key={node.id} className="bg-slate-900/70 p-4 rounded-xl border border-slate-800 flex flex-col justify-between space-y-3">
@@ -538,8 +653,8 @@ function App() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                   {liveNodes.map((node, i) => {
-                    const isOnline = node.status.includes('🟢');
-                    const hasTrainedModel = node.accuracy !== '--';
+                    const isOnline = Boolean(node.is_online);
+                    const hasTrainedModel = node.accuracy !== '--' || node.num_samples > 0 || (node.status && (node.status.includes('Trained') || node.status.includes('Contributed')));
                     const flWeight = totalSamples > 0 ? ((node.num_samples / totalSamples) * 100).toFixed(1) : '0.0';
                     return (
                       <div key={node.id} className={`glass-card p-5 rounded-2xl border space-y-4 ${

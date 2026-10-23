@@ -567,7 +567,7 @@ async def evaluate_fl_model(request: Request):
         raise HTTPException(status_code=400, detail="No local banking dataset uploaded.")
     
     body = await request.json()
-    server_url = body.get("server_url", "http://localhost:8000")
+    server_url = body.get("server_url", "http://localhost:8000").rstrip("/")
     token = body.get("token", "")
     
     try:
@@ -634,40 +634,46 @@ async def evaluate_fl_model(request: Request):
 # These shims bridge the gap.
 
 @app.post("/dataset/upload")
-async def dataset_upload_compat(use_sample: str = Form(None), file: UploadFile = File(None)):
+async def dataset_upload_compat(request: Request, use_sample: str = Form(None), file: UploadFile = File(None)):
     """
     React dashboard compatibility: load the sample banking CSV (use_sample=true)
-    or accept a file upload.
+    or accept a file upload. Automatically isolates datasets per banking node.
     """
     global uploaded_dataset
     if use_sample and use_sample.lower() == "true":
-        # Load bundled sample dataset
-        sample_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "sample_banking.csv"))
+        client_port = request.url.port or CURRENT_PORT
+        node_num = 2 if client_port == 8002 else 1
+        branch_csv = f"branch_{'beta' if node_num == 2 else 'alpha'}_data.csv"
+        branch_name = "Bank Branch Beta" if node_num == 2 else "Bank Branch Alpha"
+
+        sample_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", branch_csv))
         if not os.path.exists(sample_path):
-            raise HTTPException(status_code=404, detail="Sample dataset not found at data/sample_banking.csv")
-        add_client_log("[INFO] Loading sample banking dataset from local disk...")
+            sample_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "sample_banking.csv"))
+            branch_csv = "sample_banking.csv"
+
+        add_client_log(f"[INFO] Loading local dataset for {branch_name} from disk: {branch_csv}...")
         df = pd.read_csv(sample_path)
         uploaded_dataset = df
         columns = list(df.columns)
         client_state["status"] = "dataset_loaded"
-        client_state["message"] = f"Sample banking dataset loaded ({df.shape[0]} rows, {df.shape[1]} columns)"
+        client_state["message"] = f"{branch_name} dataset loaded ({df.shape[0]} rows, {df.shape[1]} columns)"
         client_state["columns"] = columns
         client_state["dataset_info"] = {
-            "filename": "sample_banking.csv",
+            "filename": branch_csv,
             "rows": df.shape[0],
             "columns": df.shape[1],
             "column_names": columns,
             "total_records": df.shape[0],
             "total_samples": df.shape[0],
         }
-        add_client_log(f"[INFO] Dataset loaded: sample_banking.csv")
+        add_client_log(f"[INFO] Dataset loaded: {branch_csv} ({branch_name})")
         add_client_log(f"[INFO]   Rows    : {df.shape[0]}")
         add_client_log(f"[INFO]   Columns : {df.shape[1]}  ->  {', '.join(columns[:6])}{'...' if len(columns) > 6 else ''}")
         add_client_log(f"[INFO]   Target  : '{columns[-1]}' (last column will be used as label)")
         add_client_log("[INFO] Raw data stays local. Only model weights will leave this node.")
         return {
-            "message": "Sample dataset loaded",
-            "filename": "sample_banking.csv",
+            "message": f"Sample dataset loaded ({branch_csv})",
+            "filename": branch_csv,
             "rows": df.shape[0],
             "columns": df.shape[1],
             "column_names": columns,
@@ -721,6 +727,8 @@ async def train_local_compat(request: Request):
 
     body = await request.json()
     epochs = int(body.get("epochs", 10))
+    server_url = body.get("server_url", "").rstrip("/")
+    token = body.get("token", "")
 
     df = uploaded_dataset.copy()
     target_column = df.columns[-1]  # Last column is target by convention
@@ -761,8 +769,9 @@ async def train_local_compat(request: Request):
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X.values.astype(np.float32))
 
+        port_seed = (request.url.port or CURRENT_PORT) % 100
         X_train, X_test, y_train, y_test = train_test_split(
-            X_scaled, y_encoded, test_size=0.2, random_state=42,
+            X_scaled, y_encoded, test_size=0.2, random_state=42 + port_seed,
             stratify=y_encoded if num_classes > 1 else None
         )
 
@@ -776,6 +785,28 @@ async def train_local_compat(request: Request):
 
         input_features = X_train.shape[1]
         model = GenericMLP(input_features=input_features, num_classes=num_classes)
+
+        # Check if an aggregated Global Model is available on the aggregator server
+        global_loaded = False
+        if server_url:
+            try:
+                g_headers = {"Authorization": f"Bearer {token}"} if token else {}
+                g_resp = requests.get(f"{server_url}/global-model", headers=g_headers, timeout=5)
+                if g_resp.status_code == 200:
+                    g_data = g_resp.json()
+                    g_weights = g_data.get("model_weights", {})
+                    g_config = g_data.get("model_config", {})
+                    if g_weights and g_config.get("input_features") == input_features:
+                        state_dict = {k: torch.tensor(v, dtype=torch.float32) for k, v in g_weights.items()}
+                        model.load_state_dict(state_dict)
+                        global_loaded = True
+                        add_client_log(f"[TRAIN] Initialized model weights from Central Global Model ({g_data.get('global_model_version', 'latest')})! Training will build on aggregated knowledge.")
+            except Exception as e:
+                add_client_log(f"[TRAIN] Note: Global model check skipped ({str(e)}). Training from baseline.")
+
+        if not global_loaded:
+            add_client_log("[TRAIN] Starting local model from baseline initialization (Round 1).")
+
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=0.001)
 
@@ -857,7 +888,7 @@ async def send_weights_compat(request: Request):
         raise HTTPException(status_code=400, detail="No trained model available. Run /train/local first.")
 
     body = await request.json()
-    server_url = body.get("server_url", "http://localhost:8000")
+    server_url = body.get("server_url", "http://localhost:8000").rstrip("/")
     token = body.get("token", "")
 
     # Serialize weights
@@ -905,7 +936,7 @@ async def send_weights_compat(request: Request):
 async def validate_global_compat(request: Request):
     """React dashboard compatibility: alias for /evaluate-fl-model."""
     body = await request.json()
-    server_url = body.get("server_url", "http://localhost:8000")
+    server_url = body.get("server_url", "http://localhost:8000").rstrip("/")
     add_client_log("[GLOBAL] Fetching global model from aggregator server...")
     add_client_log(f"[GLOBAL] GET {server_url}/global-model")
     result = await evaluate_fl_model(request)
@@ -974,10 +1005,18 @@ else:
     # Fallback to plain client dir (no React build present)
     app.mount("/", StaticFiles(directory=fallback_path, html=True), name="frontend")
 
+CURRENT_PORT = 8001
+
 if __name__ == "__main__":
-    print("🏦 FedVault AI Bank Client Node starting...")
-    print("   Local:   http://localhost:8001")
-    print("   Network: http://<YOUR_IP>:8001")
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    import argparse
+    parser = argparse.ArgumentParser(description="FedVault AI Banking Node Client")
+    parser.add_argument("--port", type=int, default=8001, help="Port to run the client node on (e.g. 8001, 8002)")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Host IP to bind to")
+    args = parser.parse_args()
+    
+    CURRENT_PORT = args.port
+    print(f"🏦 FedVault AI Bank Client Node starting on port {args.port}...")
+    print(f"   Local:   http://localhost:{args.port}")
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
