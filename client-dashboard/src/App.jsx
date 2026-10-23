@@ -81,6 +81,25 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Auto-verify token on load to prevent stale sessions
+  useEffect(() => {
+    if (!token) return;
+    const verifyToken = async () => {
+      try {
+        const cleanUrl = serverUrl.replace(/\/$/, '');
+        await axios.get(`${cleanUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          timeout: 4000
+        });
+      } catch (err) {
+        if (err.response?.status === 401) {
+          handleLogout();
+        }
+      }
+    };
+    verifyToken();
+  }, [token, serverUrl]);
+
   // Heartbeat to central aggregator to maintain Online status
   useEffect(() => {
     if (!token) return;
@@ -89,15 +108,19 @@ function App() {
         const cleanUrl = serverUrl.replace(/\/$/, '');
         await axios.post(
           `${cleanUrl}/heartbeat`,
-          { client_status: clientStatus?.status || 'Online' },
+          { client_status: clientStatus?.status || 'Online', node_name: nodeNameInput },
           { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
         );
-      } catch (err) { /* silent heartbeat failure */ }
+      } catch (err) {
+        if (err.response?.status === 401) {
+          handleLogout();
+        }
+      }
     };
     sendHeartbeat();
     const hbInterval = setInterval(sendHeartbeat, 10000);
     return () => clearInterval(hbInterval);
-  }, [token, serverUrl, clientStatus?.status]);
+  }, [token, serverUrl, clientStatus?.status, nodeNameInput]);
 
   const fetchClientStatus = async () => {
     try {

@@ -1,6 +1,6 @@
 # Project Reorganization & Enhancement Report
 
-The TrustFL project has been restructured, simplified (database removed), and enhanced with **Explainable AI (XAI)** capabilities.
+The FedVault AI project has been restructured, simplified (database removed), and enhanced with **Explainable AI (XAI)** capabilities.
 
 ## 📁 Updated Project Structure
 

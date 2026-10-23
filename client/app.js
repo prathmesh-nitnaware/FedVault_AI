@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   TrustFL Client — Application Logic
+   FedVault AI Client — Application Logic
    ═══════════════════════════════════════════════════════ */
 
 const CLIENT_API = window.location.origin;
@@ -190,8 +190,10 @@ async function sendHeartbeat() {
     const badge = document.getElementById("connectionBadge");
     const currentStatus = document.getElementById("statusText")?.innerText || "Online";
     
+    if (!authToken) return;
+
     try {
-        await fetch(`${serverUrl}/heartbeat`, {
+        const resp = await fetch(`${serverUrl}/heartbeat`, {
             method: "POST",
             headers: { 
                 "Authorization": `Bearer ${authToken}`,
@@ -199,8 +201,14 @@ async function sendHeartbeat() {
             },
             body: JSON.stringify({ client_status: currentStatus })
         });
-        badge.innerHTML = '<span class="dot"></span> Connected';
-        badge.classList.add("connected");
+        if (resp.status === 401) {
+            handleLogout();
+            return;
+        }
+        if (resp.ok) {
+            badge.innerHTML = '<span class="dot"></span> Connected';
+            badge.classList.add("connected");
+        }
     } catch {
         badge.innerHTML = '<span class="dot"></span> Disconnected';
         badge.classList.remove("connected");

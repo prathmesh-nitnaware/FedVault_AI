@@ -35,6 +35,15 @@
             "created_at": "2026-10-23T14:16:29.408186",
             "last_login": "2026-10-23T23:28:01.424784",
             "is_active": true
+        },
+        {
+            "id": 5,
+            "username": "ganesh-national-bank",
+            "email": "ganeshnationalbank@gmail.com",
+            "password_hash": "$2b$12$I0eHBfm96C4Viwvs3YfZAODwe/eeORjyiic8Smi.EbkSyBBN3etL.",
+            "created_at": "2026-10-23T23:55:35.161649",
+            "last_login": null,
+            "is_active": true
         }
     ],
     "training_sessions": [
@@ -569,7 +578,7 @@
             "created_at": "2026-10-23T23:30:57.833610"
         }
     ],
-    "next_user_id": 5,
+    "next_user_id": 6,
     "next_session_id": 30,
     "next_round_id": 21
 }

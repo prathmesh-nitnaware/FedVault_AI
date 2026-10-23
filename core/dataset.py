@@ -1,5 +1,5 @@
 """
-TrustFL Dataset Module
+FedVault AI Dataset Module
 Handles bank branch CSV/Excel datasets for Banking Systems tabular training (Fraud Detection & Credit Risk Scoring).
 """
 import os

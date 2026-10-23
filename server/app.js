@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   TrustFL Server Dashboard — Real-Time Analytics
+   FedVault AI Server Dashboard — Real-Time Analytics
    ═══════════════════════════════════════════════════════ */
 
 const API_URL = window.location.origin;
@@ -368,7 +368,7 @@ document.getElementById('serverPredictBtn')?.addEventListener('click', async () 
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('trustfl_token')}`
+                'Authorization': `Bearer ${localStorage.getItem('fedvault_token')}`
             },
             body: JSON.stringify({ sample })
         });

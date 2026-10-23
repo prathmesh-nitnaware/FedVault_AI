@@ -1034,6 +1034,11 @@ if os.path.exists(frontend_path):
     if os.path.exists(assets_path):
         app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        from fastapi.responses import Response
+        return Response(status_code=204)
+
     # Serve index.html for root GET — GET only, never blocks POST
     @app.get("/", include_in_schema=False)
     async def serve_root():
