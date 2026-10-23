@@ -52,6 +52,8 @@ function App() {
   const [datasetInfo, setDatasetInfo] = useState(null);
   const [sampleData, setSampleData] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
   
   // Training State
   const [epochs, setEpochs] = useState(5);
@@ -173,6 +175,27 @@ function App() {
       alert('Failed to load sample dataset');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleFileUpload = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const { data } = await axios.post(`${DEFAULT_CLIENT_API}/dataset/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 45000,
+      });
+      setDatasetInfo(data);
+      if (data.sample_records) setSampleData(data.sample_records);
+      setActiveStep(2);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to upload and chunk dataset.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -445,42 +468,110 @@ function App() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="border-2 border-dashed border-slate-800 hover:border-emerald-500/50 p-8 rounded-2xl flex flex-col items-center justify-center text-center space-y-3 bg-slate-950/40 transition-all">
-                <Upload size={36} className="text-emerald-400 animate-pulse" />
-                <div>
-                  <h4 className="text-sm font-bold text-slate-200">Load Institutional Banking Data</h4>
-                  <p className="text-xs text-slate-500 mt-1">Upload CSV or click below to load pre-formatted sample dataset.</p>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  if (e.dataTransfer.files?.[0]) {
+                    handleFileUpload(e.dataTransfer.files[0]);
+                  }
+                }}
+                className={`border-2 border-dashed p-8 rounded-2xl flex flex-col items-center justify-center text-center space-y-4 transition-all ${
+                  isDragging
+                    ? 'border-emerald-400 bg-emerald-950/40 ring-4 ring-emerald-500/20'
+                    : 'border-slate-800 hover:border-emerald-500/50 bg-slate-950/40'
+                }`}
+              >
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) handleFileUpload(e.target.files[0]);
+                  }}
+                  className="hidden"
+                />
+
+                <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400">
+                  <Upload size={32} className={uploading ? 'animate-bounce text-emerald-400' : 'text-emerald-400'} />
                 </div>
-                <button
-                  onClick={handleUploadDefault}
-                  disabled={uploading}
-                  className="px-5 py-2.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs rounded-xl border border-emerald-500/30 transition-all"
-                >
-                  {uploading ? 'Processing Dataset...' : 'Load Sample Banking Dataset (10,000 Records)'}
-                </button>
+
+                <div>
+                  <h4 className="text-sm font-bold text-slate-200">
+                    {uploading ? 'Processing & Partitioning Dataset...' : 'Upload Bank Customer Dataset'}
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                    Drag & drop Kaggle CSV here, or browse from disk. Automatically partitioned per banking node.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5 w-full max-w-xs">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex-1 py-2 px-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <FileText size={14} /> Browse CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUploadDefault}
+                    disabled={uploading}
+                    className="flex-1 py-2 px-3 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-medium text-xs rounded-xl transition-all"
+                  >
+                    Load Sample CSV
+                  </button>
+                </div>
+
+                <span className="text-[10px] text-slate-500 font-mono">
+                  Supports Bank Churn, Fraud & Credit CSVs • Auto-excludes ID columns
+                </span>
               </div>
 
               <div className="glass-card p-5 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Dataset Status Diagnostic</h4>
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Dataset Status Diagnostic</h4>
+                  {datasetInfo?.chunk_desc && (
+                    <span className="px-2 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-md text-[10px] font-mono font-bold">
+                      {datasetInfo.chunk_desc}
+                    </span>
+                  )}
+                </div>
                 <div className="space-y-2 text-xs font-mono">
                   <div className="flex justify-between py-1 border-b border-slate-800">
                     <span className="text-slate-500">Dataset Loaded:</span>
-                    <span className={datasetInfo ? 'text-emerald-400 font-bold' : 'text-slate-500'}>
-                      {datasetInfo ? 'YES (sample_banking.csv)' : 'NO'}
+                    <span className={datasetInfo ? 'text-emerald-400 font-bold truncate max-w-[200px]' : 'text-slate-500'} title={datasetInfo?.filename}>
+                      {datasetInfo ? (datasetInfo.raw_filename || datasetInfo.filename) : 'NO'}
                     </span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-800">
-                    <span className="text-slate-500">Record Count:</span>
-                    <span className="text-cyan-300 font-bold">{datasetInfo?.total_records || datasetInfo?.total_samples || '10,000'}</span>
+                    <span className="text-slate-500">Local Chunk Records:</span>
+                    <span className="text-cyan-300 font-bold">
+                      {datasetInfo ? (datasetInfo.total_records || datasetInfo.rows || 0).toLocaleString() : '--'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-800">
+                    <span className="text-slate-500">Predictive Features:</span>
+                    <span className="text-cyan-300 font-bold">
+                      {datasetInfo?.feature_names?.length ? `${datasetInfo.feature_names.length} Features` : datasetInfo?.columns?.length ? `${datasetInfo.columns.length - 1} Features` : '--'}
+                    </span>
                   </div>
                   <div className="flex justify-between py-1">
-                    <span className="text-slate-500">Feature Count:</span>
-                    <span className="text-cyan-300 font-bold">9 Features (CreditScore, Balance, Salary...)</span>
+                    <span className="text-slate-500">Privacy Status:</span>
+                    <span className="text-emerald-400 font-bold">🔒 Isolated in Branch Vault</span>
                   </div>
                 </div>
                 <button
                   onClick={() => setActiveStep(2)}
-                  className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-black font-extrabold text-xs rounded-xl flex items-center justify-center gap-2"
+                  disabled={!datasetInfo}
+                  className={`w-full py-2.5 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 transition-all ${
+                    datasetInfo
+                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-black shadow-lg shadow-emerald-500/20'
+                      : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  }`}
                 >
                   Proceed to Data Preprocessing <ChevronRight size={16} />
                 </button>
@@ -498,7 +589,7 @@ function App() {
                   <Layers size={20} className="text-emerald-400" />
                   Local Preprocessing & Feature Extraction
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">Standardizing feature scales and setting train/test splits.</p>
+                <p className="text-xs text-slate-400 mt-1">Standardizing feature scales and setting train/test splits for local node partition.</p>
               </div>
               <button
                 onClick={() => setActiveStep(3)}
@@ -509,10 +600,17 @@ function App() {
             </div>
 
             <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 space-y-3 font-mono text-xs">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Feature Pipeline Matrix</h4>
+              <div className="flex justify-between items-center">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Feature Pipeline Matrix</h4>
+                {datasetInfo?.column_names && (
+                  <span className="text-[11px] text-cyan-400 font-mono">
+                    Target Label: <strong className="text-emerald-400">{datasetInfo.column_names[datasetInfo.column_names.length - 1]}</strong>
+                  </span>
+                )}
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {["CreditScore (Normalized)", "Age (Standardized)", "Tenure (0-10)", "Balance (Scaled)", "NumOfProducts (1-4)", "HasCrCard (Binary)", "IsActiveMember (Binary)", "EstimatedSalary (Scaled)"].map((feat, i) => (
-                  <div key={i} className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-cyan-300">
+                {(datasetInfo?.feature_names || datasetInfo?.column_names?.slice(0, -1) || ["credit_score", "country", "gender", "age", "tenure", "balance", "products_number", "credit_card", "active_member", "estimated_salary"]).map((feat, i) => (
+                  <div key={i} className="bg-slate-900 p-2.5 rounded-xl border border-slate-800 text-cyan-300 truncate" title={feat}>
                     {feat}
                   </div>
                 ))}
@@ -581,7 +679,7 @@ function App() {
                     </div>
                     <div className="flex justify-between p-3 bg-slate-900 rounded-xl border border-slate-800">
                       <span className="text-slate-400">Sample Count Weighted Contribution:</span>
-                      <span className="text-cyan-300 font-bold">{trainingResults.samples || 4500} records</span>
+                      <span className="text-cyan-300 font-bold">{trainingResults.samples || datasetInfo?.total_records || '--'} records</span>
                     </div>
                   </div>
                 ) : (

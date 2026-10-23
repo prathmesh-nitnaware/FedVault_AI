@@ -258,10 +258,11 @@ async def train_model(request: Request):
         # Handle categorical features
         feature_encoders = {}
         for col in X.columns:
-            if X[col].dtype == 'object' or X[col].dtype.name == 'category':
+            if not pd.api.types.is_numeric_dtype(X[col]):
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
                 feature_encoders[col] = le
+            X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
         
         # Handle missing values
         X = X.fillna(X.median(numeric_only=True))
@@ -483,11 +484,8 @@ async def predict(request: Request):
                 le = local_feature_encoders[col]
                 known_classes = set(le.classes_)
                 input_df[col] = input_df[col].apply(lambda x: le.transform([str(x)])[0] if str(x) in known_classes else 0)
-            elif input_df[col].dtype == 'object':
-                try:
-                    input_df[col] = pd.to_numeric(input_df[col])
-                except:
-                    input_df[col] = 0
+            elif not pd.api.types.is_numeric_dtype(input_df[col]):
+                input_df[col] = pd.to_numeric(input_df[col], errors='coerce').fillna(0)
         
         input_scaled = local_scaler.transform(input_df.values.astype(np.float32))
         input_tensor = torch.tensor(input_scaled, dtype=torch.float32)
@@ -590,15 +588,19 @@ async def evaluate_fl_model(request: Request):
         
         # Prepare evaluation dataset
         df = uploaded_dataset.copy()
+        id_cols = [c for c in df.columns if c.lower() in ('customer_id', 'customerid', 'id', 'user_id', 'rownumber', 'sr_no')]
+        if id_cols:
+            df = df.drop(columns=id_cols)
         target_col = client_state.get("target_column") or df.columns[-1]
         feature_cols = [c for c in df.columns if c != target_col]
         X = df[feature_cols].copy()
         y = df[target_col].copy()
         
         for col in X.columns:
-            if X[col].dtype == 'object' or X[col].dtype.name == 'category':
+            if not pd.api.types.is_numeric_dtype(X[col]):
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
+            X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
         
         X = X.fillna(X.median(numeric_only=True)).fillna(0)
         le_y = LabelEncoder()
@@ -681,10 +683,9 @@ async def dataset_upload_compat(request: Request, use_sample: str = Form(None), 
             "sample_records": df.head(5).to_dict(orient="records"),
         }
     elif file is not None:
-        # Delegate to the file-upload endpoint logic
         content = await file.read()
         fname = file.filename.lower()
-        add_client_log(f"[INFO] Receiving uploaded file: {file.filename}")
+        add_client_log(f"[INFO] Receiving uploaded dataset file: {file.filename}")
         try:
             if fname.endswith(".csv"):
                 df = pd.read_csv(io.BytesIO(content))
@@ -694,20 +695,71 @@ async def dataset_upload_compat(request: Request, use_sample: str = Form(None), 
                 raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported.")
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
-        uploaded_dataset = df
-        columns = list(df.columns)
+
+        total_source_rows = len(df)
+        if total_source_rows == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        # Exclude non-predictive identifier columns (e.g. customer_id, id, rownumber)
+        id_cols = [c for c in df.columns if c.lower() in ('customer_id', 'customerid', 'id', 'user_id', 'rownumber', 'sr_no', 'srno')]
+        if id_cols:
+            df = df.drop(columns=id_cols)
+            add_client_log(f"[INFO] Auto-excluded identifier column(s) from predictive features: {', '.join(id_cols)}")
+
+        # Federated Node Chunking: Allocate non-overlapping data chunk based on node port
+        client_port = request.url.port or CURRENT_PORT
+        node_idx = 1 if client_port == 8002 else 0
+        total_nodes = 2
+
+        if total_source_rows >= 20:
+            chunk_size = total_source_rows // total_nodes
+            start_idx = node_idx * chunk_size
+            end_idx = total_source_rows if node_idx == total_nodes - 1 else (node_idx + 1) * chunk_size
+            chunk_df = df.iloc[start_idx:end_idx].copy().reset_index(drop=True)
+            chunk_desc = f"Chunk {node_idx + 1}/{total_nodes} (Rows {start_idx + 1:,}-{end_idx:,} of {total_source_rows:,})"
+        else:
+            chunk_df = df.copy()
+            chunk_desc = f"Full Dataset ({total_source_rows} records)"
+
+        uploaded_dataset = chunk_df
+        columns = list(chunk_df.columns)
+        feature_cols = [c for c in columns if c != columns[-1]]
+
         client_state["status"] = "dataset_loaded"
         client_state["columns"] = columns
         client_state["dataset_info"] = {
-            "filename": file.filename, "rows": df.shape[0], "columns": df.shape[1],
-            "column_names": columns, "total_records": df.shape[0], "total_samples": df.shape[0],
+            "filename": f"{file.filename} [{chunk_desc}]",
+            "raw_filename": file.filename,
+            "chunk_desc": chunk_desc,
+            "rows": chunk_df.shape[0],
+            "columns": chunk_df.shape[1],
+            "column_names": columns,
+            "feature_names": feature_cols,
+            "total_records": chunk_df.shape[0],
+            "total_samples": chunk_df.shape[0],
+            "dataset_total_records": total_source_rows,
+            "node_num": node_idx + 1,
         }
-        add_client_log(f"[INFO] Dataset loaded: {file.filename}  ({df.shape[0]} rows, {df.shape[1]} columns)")
-        add_client_log(f"[INFO]   Target: '{columns[-1]}' (last column)")
+
+        add_client_log(f"[INFO] ================= DATASET CHUNKING (FEDERATED PARTITION) =================")
+        add_client_log(f"[INFO] Source file     : {file.filename} ({total_source_rows:,} total rows)")
+        add_client_log(f"[INFO] Node Assignment : Bank Node #{node_idx + 1} (Port {client_port})")
+        add_client_log(f"[INFO] Local Partition : {chunk_desc}")
+        add_client_log(f"[INFO] Local Records   : {len(chunk_df):,} samples ({len(feature_cols)} features, target='{columns[-1]}')")
+        add_client_log(f"[INFO] Data Privacy    : Raw records strictly isolated in local bank vault. No cross-node leakage.")
+        add_client_log(f"[INFO] =========================================================================")
+
         return {
-            "message": "Dataset uploaded", "filename": file.filename,
-            "rows": df.shape[0], "columns": df.shape[1], "column_names": columns,
-            "total_records": df.shape[0], "sample_records": df.head(5).to_dict(orient="records"),
+            "message": f"Dataset uploaded & partitioned: {chunk_desc}",
+            "filename": f"{file.filename} [{chunk_desc}]",
+            "raw_filename": file.filename,
+            "rows": chunk_df.shape[0],
+            "columns": chunk_df.shape[1],
+            "column_names": columns,
+            "feature_names": feature_cols,
+            "total_records": chunk_df.shape[0],
+            "chunk_desc": chunk_desc,
+            "sample_records": chunk_df.head(5).to_dict(orient="records"),
         }
     else:
         raise HTTPException(status_code=400, detail="Provide use_sample=true or upload a file.")
@@ -750,16 +802,22 @@ async def train_local_compat(request: Request):
         import torch.nn as nn
         import torch.optim as optim
 
+        id_cols = [c for c in df.columns if c.lower() in ('customer_id', 'customerid', 'id', 'user_id', 'rownumber', 'sr_no')]
+        if id_cols:
+            df = df.drop(columns=id_cols)
+
+        target_column = df.columns[-1]
         feature_cols = [c for c in df.columns if c != target_column]
         X = df[feature_cols].copy()
         y = df[target_column].copy()
 
         feature_encoders = {}
         for col in X.columns:
-            if X[col].dtype == "object" or X[col].dtype.name == "category":
+            if not pd.api.types.is_numeric_dtype(X[col]):
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
                 feature_encoders[col] = le
+            X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
 
         X = X.fillna(X.median(numeric_only=True)).fillna(0)
         label_encoder = LabelEncoder()
@@ -914,6 +972,7 @@ async def send_weights_compat(request: Request):
                 "num_classes": local_model_config["num_classes"],
                 "dataset_name": client_state.get("dataset_info", {}).get("filename", "unknown") if client_state.get("dataset_info") else "unknown",
                 "num_samples": uploaded_dataset.shape[0] if uploaded_dataset is not None else 0,
+                "feature_names": local_feature_columns,
             },
             headers={"Authorization": f"Bearer {token}"} if token else {},
             timeout=30,

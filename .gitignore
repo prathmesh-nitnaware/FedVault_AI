@@ -99,3 +99,9 @@ Mini Project Report Format.docx
 FedVault_AI_Project_Documentation.docx
 docs/*.docx
 
+# Raw Dataset Archives & Large Datasets
+archive*/
+data/bank_customer_churn.csv
+*Bank Customer Churn Prediction*.csv
+
+

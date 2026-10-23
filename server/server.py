@@ -512,8 +512,11 @@ async def submit_model_update(request: Request):
     
     # Store or validate model config
     model_config = {"input_features": input_features, "num_classes": num_classes}
+    feature_names_submitted = body.get("feature_names", None)
+    if feature_names_submitted:
+        model_config["feature_names"] = feature_names_submitted
     
-    if global_model_config is None:
+    if global_model_config is None or len(client_updates) == 0:
         global_model_config = model_config
     elif global_model_config["input_features"] != input_features or global_model_config["num_classes"] != num_classes:
         raise HTTPException(
@@ -823,8 +826,8 @@ async def get_feature_xai():
     model = GenericMLP(input_features, num_classes)
     model.load_state_dict(global_model_weights)
     
-    # Feature names for banking fraud / credit risk model
-    feature_names = ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"]
+    # Feature names for banking model (dynamic from dataset, or default)
+    feature_names = (global_model_config.get("feature_names") if global_model_config else None) or ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"]
     
     importance = get_feature_importance(model, feature_names)
     return {"feature_importance": importance}
@@ -850,7 +853,7 @@ async def post_prediction_xai(request: Request):
     model = GenericMLP(global_model_config["input_features"], global_model_config["num_classes"])
     model.load_state_dict(global_model_weights)
     
-    feature_names = ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"]
+    feature_names = (global_model_config.get("feature_names") if global_model_config else None) or ["CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"]
     
     explanation = explain_prediction(model, input_tensor, feature_names)
     return {"explanation": explanation}
