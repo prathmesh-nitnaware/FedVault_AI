@@ -75,12 +75,24 @@ function App() {
   const clientLogRef = useRef(null);
   const clientLogScrolledUp = useRef(false);
 
+  // Poll client status & logs frequently for live real-time feedback
   useEffect(() => {
     fetchClientStatus();
     fetchClientLogs();
-    const interval = setInterval(() => { fetchClientStatus(); fetchClientLogs(); }, 3000);
+    const interval = setInterval(() => {
+      fetchClientStatus();
+      fetchClientLogs();
+    }, 1500);
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-scroll terminal when new log lines arrive unless user intentionally scrolled up
+  useEffect(() => {
+    const el = clientLogRef.current;
+    if (el && !clientLogScrolledUp.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [clientLogs]);
 
   // Auto-verify token on load to prevent stale sessions
   useEffect(() => {
@@ -101,7 +113,7 @@ function App() {
     verifyToken();
   }, [token, serverUrl]);
 
-  // Heartbeat to central aggregator to maintain Online status
+  // Heartbeat to central aggregator to maintain Online status and stream live telemetry
   useEffect(() => {
     if (!token) return;
     const sendHeartbeat = async () => {
@@ -109,8 +121,15 @@ function App() {
         const cleanUrl = serverUrl.replace(/\/$/, '');
         await axios.post(
           `${cleanUrl}/heartbeat`,
-          { client_status: clientStatus?.status || 'Online', node_name: nodeNameInput },
-          { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+          {
+            client_status: clientStatus?.status || 'Online',
+            node_name: nodeNameInput || user?.username,
+            accuracy: clientStatus?.accuracy,
+            loss: clientStatus?.loss,
+            dataset_name: datasetInfo?.filename || clientStatus?.dataset_info?.filename,
+            num_samples: datasetInfo?.rows || datasetInfo?.records || clientStatus?.dataset_info?.rows || clientStatus?.dataset_info?.records,
+          },
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 4000 }
         );
       } catch (err) {
         if (err.response?.status === 401) {
@@ -119,9 +138,9 @@ function App() {
       }
     };
     sendHeartbeat();
-    const hbInterval = setInterval(sendHeartbeat, 10000);
+    const hbInterval = setInterval(sendHeartbeat, 3000);
     return () => clearInterval(hbInterval);
-  }, [token, serverUrl, clientStatus?.status, nodeNameInput]);
+  }, [token, serverUrl, clientStatus?.status, clientStatus?.accuracy, clientStatus?.loss, datasetInfo, nodeNameInput, user]);
 
   const fetchClientStatus = async () => {
     try {
@@ -131,7 +150,7 @@ function App() {
         setDatasetInfo(data.dataset_info);
       }
     } catch (err) {
-      console.error('Client node offline');
+      // client offline
     }
   };
 
@@ -139,11 +158,6 @@ function App() {
     try {
       const { data } = await axios.get(`${DEFAULT_CLIENT_API}/logs`);
       setClientLogs(data.logs || []);
-      const el = clientLogRef.current;
-      if (el && !clientLogScrolledUp.current) {
-        const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-        if (isNearBottom) el.scrollTop = el.scrollHeight;
-      }
     } catch (err) {}
   };
 
@@ -818,6 +832,23 @@ function App() {
             </div>
           </div>
 
+          {/* Color legend matching main branch standard */}
+          <div className="flex flex-wrap gap-3 text-[10px] font-mono">
+            {[
+              { tag: '[TRAIN]', color: 'text-amber-400', dot: 'bg-amber-400', label: 'Local Training' },
+              { tag: '[TX]',    color: 'text-yellow-400', dot: 'bg-yellow-400', label: 'Weight Transmission' },
+              { tag: '[GLOBAL]',color: 'text-emerald-400',dot: 'bg-emerald-400',label: 'Central Global Model' },
+              { tag: '[INFO]',  color: 'text-slate-400',  dot: 'bg-slate-400',  label: 'System Trace' },
+              { tag: '[ERROR]', color: 'text-rose-400',   dot: 'bg-rose-400',   label: 'Error Alert' },
+            ].map(({ tag, color, dot, label }) => (
+              <span key={tag} className="flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${dot} inline-block`}></span>
+                <span className={color}>{tag}</span>
+                <span className="text-slate-500">{label}</span>
+              </span>
+            ))}
+          </div>
+
           <div
             ref={clientLogRef}
             onScroll={() => {
@@ -839,16 +870,26 @@ function App() {
                 const ts  = tsMatch ? tsMatch[1] : null;
                 const msg = tsMatch ? log.slice(tsMatch[0].length) : log;
 
+                const isTrainStart = msg.includes('========== LOCAL TRAINING START');
+                const isTrainEnd   = msg.includes('========== TRAINING COMPLETE');
+                const isTxStart    = msg.includes('========== TRANSMITTING WEIGHTS');
+                const isTxEnd      = msg.includes('========== TRANSMISSION COMPLETE');
+                const isSep = isTrainStart || isTrainEnd || isTxStart || isTxEnd;
+
                 let color = 'text-slate-400';
-                if (msg.startsWith('[TRAIN]')) color = 'text-amber-300';
-                if (msg.startsWith('[TX]'))    color = 'text-yellow-400';
-                if (msg.startsWith('[GLOBAL]'))color = 'text-emerald-400';
-                if (msg.startsWith('[ERROR]')) color = 'text-rose-400';
+                if (msg.startsWith('[TRAIN]')) color = msg.includes('=====') ? 'text-amber-300 font-bold' : msg.includes('[TRAIN]   ') ? 'text-slate-300' : 'text-amber-400';
+                if (msg.startsWith('[TX]'))    color = msg.includes('=====') ? 'text-yellow-300 font-bold' : msg.includes('[TX]   ')    ? 'text-slate-300' : 'text-yellow-400';
+                if (msg.startsWith('[GLOBAL]'))color = 'text-emerald-400 font-medium';
+                if (msg.startsWith('[ERROR]')) color = 'text-rose-400 font-bold';
 
                 return (
-                  <div key={i} className="flex gap-3 hover:bg-slate-900/50 px-1.5 py-0.5 rounded">
-                    <span className="text-slate-600 select-none shrink-0 w-[58px]">{ts || ''}</span>
-                    <span className={color}>{msg}</span>
+                  <div key={i}>
+                    {(isTrainStart || isTxStart) && <div className="my-1.5 border-t border-slate-700/60 border-dashed" />}
+                    <div className={`flex gap-3 hover:bg-slate-900/50 px-1.5 py-0.5 rounded ${isSep && (isTrainEnd || isTxEnd) ? 'mb-1.5' : ''}`}>
+                      <span className="text-slate-600 select-none shrink-0 w-[58px]">{ts || ''}</span>
+                      <span className={color}>{msg}</span>
+                    </div>
+                    {(isTrainEnd || isTxEnd) && <div className="my-1.5 border-t border-slate-700/60 border-dashed" />}
                   </div>
                 );
               })

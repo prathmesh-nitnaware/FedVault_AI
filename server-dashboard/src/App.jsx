@@ -64,17 +64,14 @@ function App() {
   useEffect(() => {
     fetchStatus();
     fetchXAI();
-    const interval = setInterval(fetchStatus, 3000);
+    const interval = setInterval(fetchStatus, 1500);
     return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     const el = logContainerRef.current;
-    if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (isNearBottom) {
+    if (el && !userScrolledUp.current) {
       el.scrollTop = el.scrollHeight;
-      userScrolledUp.current = false;
     }
   }, [status?.logs]);
 

@@ -372,10 +372,18 @@ async def get_me(request: Request):
 async def heartbeat(request: Request):
     client_status = "Online"
     node_name = None
+    accuracy = None
+    loss = None
+    num_samples = None
+    dataset_name = None
     try:
         body = await request.json()
         client_status = body.get("client_status", "Online")
         node_name = body.get("node_name") or body.get("username")
+        accuracy = body.get("accuracy")
+        loss = body.get("loss")
+        num_samples = body.get("num_samples")
+        dataset_name = body.get("dataset_name")
     except:
         pass
 
@@ -407,20 +415,31 @@ async def heartbeat(request: Request):
             "username": username,
             "status": f"Online ({client_status})",
             "last_seen": datetime.now().strftime("%H:%M:%S"),
-            "accuracy": None,
-            "loss": None,
-            "num_samples": 0,
-            "dataset_name": "N/A",
+            "accuracy": round(float(accuracy), 2) if accuracy is not None else None,
+            "loss": round(float(loss), 4) if loss is not None else None,
+            "num_samples": int(num_samples) if num_samples else 0,
+            "dataset_name": dataset_name or "N/A",
             "is_online": True,
         }
     else:
         connected_users[uid]["last_seen"] = datetime.now().strftime("%H:%M:%S")
         connected_users[uid]["username"] = username
         connected_users[uid]["is_online"] = True
+        if accuracy is not None:
+            connected_users[uid]["accuracy"] = round(float(accuracy), 2)
+        if loss is not None:
+            connected_users[uid]["loss"] = round(float(loss), 4)
+        if num_samples:
+            connected_users[uid]["num_samples"] = int(num_samples)
+        if dataset_name and dataset_name != "N/A":
+            connected_users[uid]["dataset_name"] = dataset_name
+
         curr_status = connected_users[uid].get("status", "")
-        # Only update status string if not already showing Trained / Contributed
-        if not (curr_status.startswith("Trained") or curr_status.startswith("Contributed")):
-            connected_users[uid]["status"] = f"Online ({client_status})"
+        if not curr_status.startswith("Contributed"):
+            if accuracy is not None:
+                connected_users[uid]["status"] = f"Trained (Acc: {float(accuracy):.1f}%)"
+            else:
+                connected_users[uid]["status"] = f"Online ({client_status})"
 
     system_status["connected_clients"] = connected_users
     system_status["online_users_count"] = len(online_users)
