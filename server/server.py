@@ -814,10 +814,16 @@ async def predict(request: Request):
         raise HTTPException(status_code=400, detail="Input sample data is required.")
         
     try:
-        num_features = len(input_data)
-        input_features = global_model_config.get("input_features", num_features) if global_model_config else num_features
+        input_features = global_model_config.get("input_features", len(input_data)) if global_model_config else len(input_data)
         num_classes = global_model_config.get("num_classes", 2) if global_model_config else 2
         
+        # Ensure sample matches input_features exactly
+        padded_sample = list(input_data)
+        if len(padded_sample) < input_features:
+            padded_sample.extend([0.0] * (input_features - len(padded_sample)))
+        else:
+            padded_sample = padded_sample[:input_features]
+            
         # 1. Initialize model with aggregated weights or baseline
         model = GenericMLP(input_features, num_classes)
         if global_model_weights is not None:
@@ -828,7 +834,7 @@ async def predict(request: Request):
         model.eval()
         
         # 2. Perform live prediction
-        input_tensor = torch.tensor([input_data[:input_features]], dtype=torch.float32)
+        input_tensor = torch.tensor([padded_sample], dtype=torch.float32)
         with torch.no_grad():
             output = model(input_tensor)
             probs = torch.nn.functional.softmax(output[0], dim=0)
@@ -843,6 +849,9 @@ async def predict(request: Request):
         feature_names = (global_model_config.get("feature_names") if global_model_config else None) or [
             "CreditScore", "Age", "Tenure", "Balance", "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary", "TransactionAmount"
         ]
+        # Ensure feature_names matches input_features
+        if len(feature_names) < input_features:
+            feature_names = feature_names + [f"Feature_{i}" for i in range(len(feature_names), input_features)]
         feature_names = feature_names[:input_features]
         
         explanation = explain_prediction(model, input_tensor, feature_names)

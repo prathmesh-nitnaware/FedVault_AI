@@ -59,32 +59,30 @@ def explain_prediction(model, input_tensor, feature_names=None):
     XAI: Saliency map (gradients of output with respect to input).
     Shows how much a small change in each input feature would change the output prediction.
     """
-    model.eval()
-    input_tensor.requires_grad_()
-    
-    output = model(input_tensor)
-    
-    # Get the class with highest probability
-    target_class = output.argmax(dim=1)
-    
-    # Backpropagate to input
-    output[0, target_class].backward()
-    
-    # Gradient magnitude is our explanation
-    gradients = input_tensor.grad.abs().detach().cpu().numpy()[0]
-    
-    # Normalize
-    total = np.sum(gradients)
-    if total > 0:
-        gradients = gradients / total
+    try:
+        model.eval()
+        x = input_tensor.clone().detach().requires_grad_(True)
         
-    result = []
-    for i, val in enumerate(gradients):
-        name = feature_names[i] if feature_names and i < len(feature_names) else f"Feature {i}"
-        result.append({"feature": name, "score": float(val)})
+        output = model(x)
+        target_class = output.argmax(dim=1)
         
-    result.sort(key=lambda x: x["score"], reverse=True)
-    return result
+        output[0, target_class].backward()
+        
+        gradients = x.grad.abs().detach().cpu().numpy()[0]
+        
+        total = np.sum(gradients)
+        if total > 0:
+            gradients = gradients / total
+            
+        result = []
+        for i, val in enumerate(gradients):
+            name = feature_names[i] if feature_names and i < len(feature_names) else f"Feature {i}"
+            result.append({"feature": name, "score": float(val)})
+            
+        result.sort(key=lambda item: item["score"], reverse=True)
+        return result
+    except Exception as e:
+        return [{"feature": "Saliency Error", "score": 0.0, "error": str(e)}]
 
 def explain_prediction_shap(model, input_tensor, background_data=None, feature_names=None):
     """
@@ -92,32 +90,42 @@ def explain_prediction_shap(model, input_tensor, background_data=None, feature_n
     Uses DeepExplainer for PyTorch models.
     """
     try:
-        # If no background data, use a small synthetic one (not ideal, but works for demo)
+        num_features = input_tensor.shape[1]
         if background_data is None:
-            num_features = input_tensor.shape[1]
             background_data = torch.zeros((10, num_features))
         
-        explainer = shap.DeepExplainer(model, background_data)
-        shap_values = explainer.shap_values(input_tensor, check_additivity=False)
+        model.eval()
+        clean_input = input_tensor.clone().detach()
+        clean_bg = background_data.clone().detach()
+        
+        explainer = shap.DeepExplainer(model, clean_bg)
+        shap_values = explainer.shap_values(clean_input, check_additivity=False)
         
         with torch.no_grad():
-            output = model(input_tensor)
+            output = model(clean_input)
             pred_class = torch.argmax(output).item()
             
         if isinstance(shap_values, list):
             class_shap = shap_values[pred_class][0]
+        elif isinstance(shap_values, np.ndarray):
+            if shap_values.ndim == 3:  # (samples, features, classes)
+                class_shap = shap_values[0, :, pred_class]
+            elif shap_values.ndim == 2:
+                class_shap = shap_values[0]
+            else:
+                class_shap = shap_values.flatten()
         else:
-            class_shap = shap_values[0]
+            class_shap = np.array(shap_values).flatten()
 
         result = []
-        for i, val in enumerate(class_shap):
+        for i in range(min(num_features, len(class_shap))):
             name = feature_names[i] if feature_names and i < len(feature_names) else f"Feature {i}"
-            result.append({"feature": name, "score": float(val)})
+            result.append({"feature": name, "score": float(class_shap[i])})
             
-        result.sort(key=lambda x: abs(x["score"]), reverse=True)
+        result.sort(key=lambda item: abs(item["score"]), reverse=True)
         return result
     except Exception as e:
-        return [{"feature": "SHAP Error", "score": 0, "error": str(e)}]
+        return [{"feature": "SHAP Error", "score": 0.0, "error": str(e)}]
 
 def explain_prediction_lime(model, input_tensor, feature_names=None):
     """
@@ -126,12 +134,13 @@ def explain_prediction_lime(model, input_tensor, feature_names=None):
     """
     try:
         num_features = input_tensor.shape[1]
-        # Create a synthetic training set for LIME if none provided
+        clean_input = input_tensor.clone().detach().cpu().numpy()[0]
         training_data = np.random.normal(0, 1, size=(50, num_features))
+        feat_names = feature_names[:num_features] if feature_names else [f"Feature {i}" for i in range(num_features)]
         
         explainer = lime.lime_tabular.LimeTabularExplainer(
             training_data,
-            feature_names=feature_names,
+            feature_names=feat_names,
             mode='classification'
         )
         
@@ -140,13 +149,13 @@ def explain_prediction_lime(model, input_tensor, feature_names=None):
             with torch.no_grad():
                 logits = model(t)
                 probs = torch.nn.functional.softmax(logits, dim=1)
-            return probs.numpy()
+            return probs.cpu().numpy()
         
-        exp = explainer.explain_instance(input_tensor[0].detach().numpy(), predict_fn, num_samples=150)
+        exp = explainer.explain_instance(clean_input, predict_fn, num_samples=100)
         
         result = []
         for desc, weight in exp.as_list():
             result.append({"feature": desc, "score": float(weight)})
         return result
     except Exception as e:
-        return [{"feature": "LIME Error", "score": 0, "error": str(e)}]
+        return [{"feature": "LIME Error", "score": 0.0, "error": str(e)}]

@@ -1110,9 +1110,11 @@ function App() {
                                 );
                               }
 
-                              return safeList.slice(0, 5).map((item, idx) => {
+                              const maxScore = Math.max(...safeList.map(s => Math.abs(s.score)), 0.0001);
+
+                              return safeList.slice(0, 6).map((item, idx) => {
                                 const isPos = item.score > 0;
-                                const barWidth = Math.min(100, Math.max(8, Math.abs(item.score) * 120));
+                                const barWidth = Math.min(100, Math.max(6, (Math.abs(item.score) / maxScore) * 100));
                                 return (
                                   <div key={idx} className="p-2 bg-slate-950/70 rounded-xl border border-slate-800/80 space-y-1 text-xs font-mono">
                                     <div className="flex justify-between items-center">
