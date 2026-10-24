@@ -98,7 +98,7 @@ def explain_prediction_shap(model, input_tensor, background_data=None, feature_n
             background_data = torch.zeros((10, num_features))
         
         explainer = shap.DeepExplainer(model, background_data)
-        shap_values = explainer.shap_values(input_tensor)
+        shap_values = explainer.shap_values(input_tensor, check_additivity=False)
         
         with torch.no_grad():
             output = model(input_tensor)
@@ -127,7 +127,7 @@ def explain_prediction_lime(model, input_tensor, feature_names=None):
     try:
         num_features = input_tensor.shape[1]
         # Create a synthetic training set for LIME if none provided
-        training_data = np.random.normal(0, 1, size=(100, num_features))
+        training_data = np.random.normal(0, 1, size=(50, num_features))
         
         explainer = lime.lime_tabular.LimeTabularExplainer(
             training_data,
@@ -142,7 +142,7 @@ def explain_prediction_lime(model, input_tensor, feature_names=None):
                 probs = torch.nn.functional.softmax(logits, dim=1)
             return probs.numpy()
         
-        exp = explainer.explain_instance(input_tensor[0].detach().numpy(), predict_fn)
+        exp = explainer.explain_instance(input_tensor[0].detach().numpy(), predict_fn, num_samples=150)
         
         result = []
         for desc, weight in exp.as_list():

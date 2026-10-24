@@ -61,6 +61,7 @@ function App() {
   const [liveInferring, setLiveInferring] = useState(false);
   const [cryptoProof, setCryptoProof] = useState(null);
   const [copiedCipher, setCopiedCipher] = useState(false);
+  const [xaiSubMethod, setXaiSubMethod] = useState('saliency'); // 'saliency' | 'shap' | 'lime'
 
   const [testInputs, setTestInputs] = useState({
     CreditScore: 720,
@@ -104,7 +105,7 @@ function App() {
     setLiveInferring(true);
     try {
       const sample = FEATURE_NAMES.map(f => parseFloat(currentInputs[f] ?? 0));
-      const { data } = await axios.post(`${API_URL}/predict`, { sample }, { timeout: 4000 });
+      const { data } = await axios.post(`${API_URL}/predict`, { sample }, { timeout: 8000 });
       setTestResult(data);
     } catch (err) {
       // waiting for global model
@@ -1036,22 +1037,88 @@ function App() {
                           </span>
                         </div>
 
-                        {/* Live Feature Saliency Attribution Waterfall */}
-                        {testResult.explanation && (
-                          <div className="space-y-2.5">
-                            <span className="text-xs font-mono font-bold text-slate-200 block uppercase tracking-wider">
-                              Live Gradient Attribution (XAI Saliency)
+                        {/* Multi-Method XAI Explanation Panel */}
+                        <div className="space-y-3 pt-2 border-t border-slate-800/80">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <FlaskConical size={13} className="text-amber-400" /> Explainable AI Attribution
                             </span>
-                            <div className="space-y-1.5">
-                              {Object.entries(testResult.explanation).slice(0, 5).map(([k, v]) => {
-                                const isPos = v > 0;
-                                const barWidth = Math.min(100, Math.max(10, Math.abs(v) * 200));
+                            <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-[10px] font-mono font-bold">
+                              <button
+                                type="button"
+                                onClick={() => setXaiSubMethod('saliency')}
+                                className={`px-2 py-1 rounded-md transition-all ${
+                                  xaiSubMethod === 'saliency'
+                                    ? 'bg-amber-400 text-slate-950 font-black shadow-sm shadow-amber-400/20'
+                                    : 'text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                Saliency
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setXaiSubMethod('shap')}
+                                className={`px-2 py-1 rounded-md transition-all ${
+                                  xaiSubMethod === 'shap'
+                                    ? 'bg-amber-400 text-slate-950 font-black shadow-sm shadow-amber-400/20'
+                                    : 'text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                SHAP
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setXaiSubMethod('lime')}
+                                className={`px-2 py-1 rounded-md transition-all ${
+                                  xaiSubMethod === 'lime'
+                                    ? 'bg-amber-400 text-slate-950 font-black shadow-sm shadow-amber-400/20'
+                                    : 'text-slate-400 hover:text-white'
+                                }`}
+                              >
+                                LIME
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Attribution List */}
+                          <div className="space-y-1.5">
+                            {(() => {
+                              let rawList = [];
+                              if (xaiSubMethod === 'shap' && testResult.shap_explanation) {
+                                rawList = testResult.shap_explanation;
+                              } else if (xaiSubMethod === 'lime' && testResult.lime_explanation) {
+                                rawList = testResult.lime_explanation;
+                              } else {
+                                rawList = testResult.explanation || [];
+                              }
+
+                              const safeList = Array.isArray(rawList)
+                                ? rawList.map(item => ({
+                                    feature: item.feature || 'Feature',
+                                    score: typeof item.score === 'number' ? item.score : (parseFloat(item.score) || 0)
+                                  }))
+                                : Object.entries(rawList || {}).map(([feature, score]) => ({
+                                    feature,
+                                    score: typeof score === 'number' ? score : (parseFloat(score) || 0)
+                                  }));
+
+                              if (safeList.length === 0) {
                                 return (
-                                  <div key={k} className="p-2 bg-slate-950/70 rounded-xl border border-slate-800/80 space-y-1 text-xs font-mono">
+                                  <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-center text-xs font-mono text-slate-500">
+                                    No attribution weights returned for this method.
+                                  </div>
+                                );
+                              }
+
+                              return safeList.slice(0, 5).map((item, idx) => {
+                                const isPos = item.score > 0;
+                                const barWidth = Math.min(100, Math.max(8, Math.abs(item.score) * 120));
+                                return (
+                                  <div key={idx} className="p-2 bg-slate-950/70 rounded-xl border border-slate-800/80 space-y-1 text-xs font-mono">
                                     <div className="flex justify-between items-center">
-                                      <span className="text-slate-300 font-bold">{k}</span>
+                                      <span className="text-slate-300 font-bold truncate max-w-[200px]">{item.feature}</span>
                                       <span className={isPos ? 'text-amber-300 font-bold' : 'text-slate-400'}>
-                                        {v.toFixed(4)}
+                                        {item.score >= 0 ? `+${item.score.toFixed(4)}` : item.score.toFixed(4)}
                                       </span>
                                     </div>
                                     <div className="h-1.5 w-full bg-slate-900 rounded-full overflow-hidden">
@@ -1064,15 +1131,31 @@ function App() {
                                     </div>
                                   </div>
                                 );
-                              })}
-                            </div>
+                              });
+                            })()}
                           </div>
-                        )}
+
+                          <div className="text-[10px] text-slate-500 font-mono flex items-center justify-between pt-1">
+                            <span>
+                              {xaiSubMethod === 'saliency' && 'Gradient Sensitivity (dY/dX backprop autograd)'}
+                              {xaiSubMethod === 'shap' && 'Shapley Additive Attribution (Cooperative Game Theory)'}
+                              {xaiSubMethod === 'lime' && 'Local Surrogate Linear Fit (Ridge Regressor)'}
+                            </span>
+                            <span className="text-amber-400/80 font-bold">Live Synced</span>
+                          </div>
+                        </div>
                       </div>
                     ) : (
-                      <div className="p-8 bg-slate-950 rounded-2xl border border-slate-800 text-center space-y-3">
+                      <div className="p-8 bg-slate-950 rounded-2xl border border-slate-800 text-center space-y-4">
                         <Activity size={32} className="text-amber-400 animate-spin mx-auto" />
                         <p className="text-xs text-slate-400 font-mono">Calculating live inference...</p>
+                        <button
+                          type="button"
+                          onClick={() => runLivePrediction(testInputs)}
+                          className="px-4 py-1.5 bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 border border-amber-400/30 rounded-xl text-xs font-mono font-bold transition-all"
+                        >
+                          Trigger Inference Now
+                        </button>
                       </div>
                     )}
                   </div>
