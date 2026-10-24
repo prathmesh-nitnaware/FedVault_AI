@@ -55,7 +55,7 @@ def save_db():
         with open(DB_FILE, "w") as f:
             json.dump(_db, f, indent=4)
     except Exception as e:
-        print(f"❌ Error saving database: {e}")
+        print(f"[ERROR] Error saving database: {e}")
 
 def load_db():
     """Load the state of _db from a JSON file if it exists."""
@@ -65,13 +65,13 @@ def load_db():
             with open(DB_FILE, "r") as f:
                 data = json.load(f)
                 _db.update(data)
-            print(f"✅ Loaded database from {DB_FILE} ({len(_db['users'])} users found)")
+            print(f"[DB] Loaded database from {DB_FILE} ({len(_db['users'])} users found)")
         except Exception as e:
-            print(f"❌ Error loading database: {e}")
+            print(f"[ERROR] Error loading database: {e}")
 
 def init_db():
     load_db()
-    print("✅ Database system initialized.")
+    print("[DB] Database system initialized.")
 
 def create_user(username: str, email: str, password_hash: str):
     for u in _db["users"]:
@@ -933,7 +933,7 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 FedVault AI Aggregator Server starting...")
+    print("[START] FedVault AI Aggregator Server starting...")
     print("   Local:   http://localhost:8000")
     print("   Network: http://0.0.0.0:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)

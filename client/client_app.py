@@ -1079,7 +1079,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     CURRENT_PORT = args.port
-    print(f"🏦 FedVault AI Bank Client Node starting on port {args.port}...")
+    print(f"[START] FedVault AI Bank Client Node starting on port {args.port}...")
     print(f"   Local:   http://localhost:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port)
 
